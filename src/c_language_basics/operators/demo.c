@@ -1,8 +1,10 @@
 #include <stdio.h>
-static unsigned pack_rgb(unsigned r, unsigned g, unsigned b) {
+static unsigned pack_rgb(unsigned r, unsigned g, unsigned b)
+{
     return ((r & 0xFFu) << 16) | ((g & 0xFFu) << 8) | (b & 0xFFu);
 }
-int main(void) {
+int main(void)
+{
     int a = 5;
     int b = 3;
     int arithmetic = a * a + b;
