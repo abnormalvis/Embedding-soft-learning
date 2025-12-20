@@ -1,64 +1,508 @@
 # 内存空间布局
 
 ## 进程内存分区概述
+
+### 虚拟内存基础
+在深入了解内存布局之前，需要理解一个关键概念：**虚拟内存**（Virtual Memory）。
+
+每个进程看到的内存地址并不是物理内存的真实地址，而是虚拟地址。操作系统通过 **内存管理单元（MMU）** 将虚拟地址映射到物理地址。这样做有几个重要优势：
+
+1. **进程隔离**：每个进程有独立的虚拟地址空间，一个进程无法访问另一个进程的内存
+2. **内存保护**：可以设置不同内存区域的访问权限
+3. **内存扩展**：虚拟内存可以超过物理内存大小（通过页面交换）
+4. **灵活布局**：程序不需要关心物理内存的碎片化问题
+
+```
+虚拟地址到物理地址的映射：
+进程 A:                     物理内存:
+┌──────────┐               ┌──────────┐
+│ 0x1000   │──────┐        │  ...     │
+│ (虚拟)   │      │   ┌───>│ 0x5000   │ (物理)
+└──────────┘      │   │    │  ...     │
+                  └───┘    │          │
+进程 B:                     │          │
+┌──────────┐               │          │
+│ 0x1000   │──────────────>│ 0x8000   │ (物理)
+│ (虚拟)   │               │  ...     │
+└──────────┘               └──────────┘
+
+两个进程可以使用相同的虚拟地址，但映射到不同的物理地址
+```
+
+### 32 位 vs 64 位地址空间
+
+| 特性 | 32 位系统 | 64 位系统 |
+|------|-----------|-----------|
+| 虚拟地址空间 | 4GB (2³²) | 理论上 16 EB (2⁶⁴)，实际 256 TB |
+| 用户空间 | 约 3GB (Linux) 或 2GB (Windows) | 约 128 TB (Linux) |
+| 内核空间 | 约 1GB (Linux) 或 2GB (Windows) | 约 128 TB (Linux) |
+| 指针大小 | 4 字节 | 8 字节 |
+| 单进程最大内存 | 受 4GB 限制 | 实际受物理内存和系统限制 |
+
+示例代码查看地址空间：
+```c
+#include <stdio.h>
+#include <stdint.h>
+
+int main() {
+    printf("指针大小: %zu 字节\n", sizeof(void*));
+    printf("size_t 大小: %zu 字节\n", sizeof(size_t));
+    printf("intptr_t 大小: %zu 字节\n", sizeof(intptr_t));
+    
+    #if defined(__x86_64__) || defined(_M_X64)
+        printf("架构: 64 位\n");
+    #elif defined(__i386) || defined(_M_IX86)
+        printf("架构: 32 位\n");
+    #endif
+    
+    return 0;
+}
+```
+
+### C 程序运行时的完整内存布局
+
 C 程序运行时的内存分为以下几个区域，每个区域都有其特定的用途和特性：
 
 ```
-高地址（0xFFFFFFFF 在 32 位系统）
-┌──────────────┐
-│  命令行参数  │  环境变量（argv, envp）
-│  和环境变量  │  由操作系统传递
-├──────────────┤
-│     栈       │  ↓ 向下增长（从高地址到低地址）
-│   (Stack)    │  • 局部变量
-│              │  • 函数参数
-│              │  • 返回地址
-│              │  • 保存的寄存器
-│              │  • 栈帧指针
-├──────────────┤
-│      ↕       │  未分配空间
-│  (未使用)    │  栈和堆之间的空闲区域
-│      ↕       │  可以动态增长
-├──────────────┤
-│     堆       │  ↑ 向上增长（从低地址到高地址）
-│   (Heap)     │  • malloc/calloc/realloc 分配
-│              │  • 动态分配的数据结构
-│              │  • 需要手动管理
-├──────────────┤
-│  BSS 段      │  未初始化数据段
-│ (Block       │  • 未初始化的全局变量
-│  Started by  │  • 未初始化的静态变量
-│  Symbol)     │  • 初始化为 0 的全局/静态变量
-│              │  • 程序启动时自动清零
-├──────────────┤
-│  数据段      │  已初始化数据段
-│  (Data       │  • 已初始化的全局变量
-│   Segment)   │  • 已初始化的静态变量
-│              │  • 分为只读和可读写两部分
-├──────────────┤
-│  代码段      │  文本段（Text Segment）
-│  (Text       │  • 程序的机器指令
-│   Segment)   │  • 只读、可共享
-│              │  • 字符串常量
-│              │  • const 全局数据
-└──────────────┘
-低地址（0x00000000）
+高地址（64 位: 0x00007FFFFFFFFFFF，32 位: 0xFFFFFFFF）
+┌──────────────────┐
+│   内核空间       │  仅内核可访问
+│ (Kernel Space)   │  不在用户进程的虚拟地址空间中
+├──────────────────┤ ← 用户空间与内核空间的分界线
+│                  │
+│  命令行参数和    │  环境变量（argv, envp）
+│  环境变量        │  由操作系统传递，程序启动时初始化
+│  (Arguments &    │  包含 main() 函数的 argc, argv 参数
+│   Environment)   │  以及所有环境变量（如 PATH, HOME 等）
+├──────────────────┤
+│                  │
+│      栈          │  ↓ 向下增长（从高地址到低地址）
+│    (Stack)       │  • 函数调用栈帧（Stack Frame）
+│                  │  • 局部变量（自动变量）
+│  每个线程有      │  • 函数参数（实际是复制到栈上）
+│  独立的栈        │  • 返回地址（函数调用完成后返回到哪里）
+│                  │  • 保存的寄存器值（寄存器现场）
+│  Linux 默认      │  • 栈帧指针（Frame Pointer, rbp/ebp）
+│  8MB/线程        │  • 栈指针（Stack Pointer, rsp/esp）
+│                  │  
+│  优点：          │  特点：
+│  - 速度极快      │  - LIFO（后进先出）数据结构
+│  - 自动管理      │  - 编译时确定大小（对于固定数组）
+│  - 缓存友好      │  - 函数返回时自动释放
+│                  │  - 栈溢出检测（guard page）
+├──────────────────┤
+│       ↕          │  
+│   未分配空间     │  栈和堆之间的"空洞"
+│   (Unmapped)     │  可以随着栈和堆的增长而缩小
+│       ↕          │  访问这片区域会触发段错误（Segmentation Fault）
+│                  │  这是一个安全特性，防止栈和堆相撞
+├──────────────────┤
+│                  │
+│      堆          │  ↑ 向上增长（从低地址到高地址）
+│    (Heap)        │  • malloc/calloc/realloc 分配的内存
+│                  │  • new 操作符分配的对象（C++）
+│  所有线程共享    │  • 动态数据结构（链表、树、图等）
+│                  │  • 运行时才能确定大小的数据
+│  理论上可以      │  • 需要手动管理（malloc/free）
+│  很大（GB级）    │  
+│                  │  特点：
+│  优点：          │  - 通过 brk() 或 mmap() 系统调用扩展
+│  - 大小灵活      │  - 可能产生内存碎片
+│  - 生命周期长    │  - 分配和释放相对较慢
+│  - 可跨函数使用  │  - 需要内存分配器管理（如 ptmalloc）
+├──────────────────┤
+│                  │
+│   BSS 段         │  未初始化数据段（Block Started by Symbol）
+│   (.bss)         │  • 未初始化的全局变量
+│                  │  • 未初始化的静态变量（全局和局部）
+│  只读（初始化后  │  • 显式初始化为 0 的全局/静态变量
+│  变为可读写）    │  
+│                  │  示例：
+│  不占用磁盘      │  int global_var;              // BSS
+│  空间（可执行    │  static int static_var;       // BSS
+│  文件中）        │  static int zero_var = 0;     // BSS
+│                  │  
+│                  │  特点：
+│                  │  - 程序加载时由内核清零（memset 0）
+│                  │  - 节省可执行文件大小
+│                  │  - 对大型数组特别有用
+├──────────────────┤
+│                  │
+│   数据段         │  已初始化数据段（Data Segment）
+│   (.data)        │  • 已初始化的全局变量（非零值）
+│                  │  • 已初始化的静态变量（非零值）
+│  可读写          │  
+│  (Read-Write)    │  示例：
+│                  │  int global = 42;             // .data
+│  占用磁盘空间    │  static int static_var = 100; // .data
+│  （存储在可      │  
+│  执行文件中）    │  细分：
+│                  │  - .data 段：可读写数据
+│                  │  - .rodata 段：只读数据（const 全局变量）
+├──────────────────┤
+│                  │
+│   代码段         │  文本段（Text Segment）
+│   (.text)        │  • 程序的机器指令（编译后的二进制代码）
+│                  │  • 所有函数的实现代码
+│  只读+可执行     │  • CPU 执行的指令序列
+│  (Read-Only +    │  
+│   Executable)    │  也可能包含：
+│                  │  • 字符串字面量（如 "Hello"）
+│  可以被多个      │  • const 全局常量（某些编译器）
+│  进程共享        │  • 跳转表（switch 语句）
+│  （节省物理      │  • 虚函数表（C++）
+│   内存）         │  
+│                  │  特点：
+│                  │  - 程序运行期间大小固定
+│                  │  - 写入会导致段错误（Segmentation Fault）
+│                  │  - 可以被多个进程实例共享
+│                  │  - 受到 DEP/NX 保护（数据执行保护）
+└──────────────────┘
+低地址（0x0000000000000000）
+
+注意：实际地址布局受到以下因素影响：
+- ASLR（地址空间布局随机化）：安全特性，随机化各段起始地址
+- PIE（位置无关可执行文件）：代码段地址也会随机化
+- 编译器和链接器设置
+- 操作系统版本和配置
 ```
 
 ### 内存布局的重要特性
-- **地址空间隔离**：每个进程都有独立的虚拟地址空间
-- **内存保护**：不同区域有不同的访问权限（读/写/执行）
-- **动态增长**：栈和堆可以在运行时动态增长
-- **地址随机化**：现代操作系统使用 ASLR（地址空间布局随机化）提高安全性
+
+#### 1. 地址空间隔离（Process Isolation）
+每个进程都有独立的虚拟地址空间，这意味着：
+- 进程 A 的地址 0x1000 和进程 B 的地址 0x1000 指向不同的物理内存
+- 一个进程无法直接访问另一个进程的内存（除非通过 IPC 机制）
+- 进程崩溃不会影响其他进程
+
+```c
+// 示例：两个进程中的相同地址
+// 进程 1
+int *ptr = malloc(sizeof(int));
+printf("进程 1: ptr = %p\n", ptr);  // 可能输出 0x55555576b2a0
+
+// 进程 2（独立运行）
+int *ptr = malloc(sizeof(int));
+printf("进程 2: ptr = %p\n", ptr);  // 可能输出 0x55555576b2a0（相同虚拟地址！）
+
+// 但它们指向不同的物理内存位置
+```
+
+#### 2. 内存保护（Memory Protection）
+不同区域有不同的访问权限，由 MMU 强制执行：
+
+| 区域 | 读（R） | 写（W） | 执行（X） | 权限标记 |
+|------|---------|---------|-----------|----------|
+| 代码段 | ✓ | ✗ | ✓ | r-x |
+| 只读数据段 | ✓ | ✗ | ✗ | r-- |
+| 数据段 | ✓ | ✓ | ✗ | rw- |
+| BSS 段 | ✓ | ✓ | ✗ | rw- |
+| 堆 | ✓ | ✓ | ✗ | rw- |
+| 栈 | ✓ | ✓ | ✗ | rw- |
+
+```c
+// 违反内存保护的示例
+void demonstrate_memory_protection() {
+    // 1. 尝试修改代码段（字符串字面量）
+    char *str = "Hello";  // 字符串在代码段（只读）
+    // str[0] = 'h';      // 段错误！只读内存不能写入
+    
+    // 2. 正确方式：将字符串复制到可写内存
+    char writable_str[] = "Hello";  // 在栈上，可写
+    writable_str[0] = 'h';           // OK
+    
+    // 3. 尝试执行数据段的内容
+    char code[] = {0x90, 0xC3};  // NOP + RET 指令
+    void (*func)() = (void(*)())code;
+    // func();  // 可能段错误！数据段不可执行（DEP/NX 保护）
+}
+```
+
+#### 3. 动态增长（Dynamic Growth）
+栈和堆可以在运行时动态增长：
+
+**栈的增长：**
+- 每次函数调用，栈自动向下增长
+- 达到栈限制时，触发栈溢出（Stack Overflow）
+- 现代系统使用 guard page 检测栈溢出
+
+```c
+void show_stack_growth(int depth) {
+    int local_var;
+    printf("深度 %d，局部变量地址: %p\n", depth, (void*)&local_var);
+    
+    if (depth < 5) {
+        show_stack_growth(depth + 1);  // 递归调用，栈增长
+    }
+}
+
+int main() {
+    show_stack_growth(0);
+    // 输出会显示地址递减（栈向下增长）
+    return 0;
+}
+```
+
+**堆的增长：**
+- 通过 `brk()` 或 `sbrk()` 系统调用扩展堆空间
+- 对于大块内存，使用 `mmap()` 创建匿名内存映射
+- 堆可以有"洞"（已释放的内存块）
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+void show_heap_growth() {
+    printf("初始 program break: %p\n", sbrk(0));
+    
+    void *p1 = malloc(1024);
+    printf("malloc 1KB 后: %p\n", sbrk(0));
+    
+    void *p2 = malloc(1024 * 1024);  // 1MB
+    printf("malloc 1MB 后: %p\n", sbrk(0));
+    
+    free(p1);
+    free(p2);
+}
+```
+
+#### 4. 地址随机化（ASLR - Address Space Layout Randomization）
+现代操作系统的安全特性，随机化内存布局以防止攻击：
+
+```c
+// 运行多次，观察地址变化
+#include <stdio.h>
+#include <stdlib.h>
+
+int global_var = 42;
+
+int main() {
+    int stack_var = 10;
+    int *heap_var = malloc(sizeof(int));
+    
+    printf("代码段（main 函数）:     %p\n", (void*)main);
+    printf("数据段（全局变量）:     %p\n", (void*)&global_var);
+    printf("栈（局部变量）:         %p\n", (void*)&stack_var);
+    printf("堆（malloc 分配）:      %p\n", (void*)heap_var);
+    
+    free(heap_var);
+    return 0;
+}
+
+// 多次运行，地址都不同（ASLR 生效）
+// $ ./program
+// 代码段（main 函数）:     0x5555555551a9
+// $ ./program
+// 代码段（main 函数）:     0x5555555561a9  （地址不同！）
+```
+
+查看和控制 ASLR：
+```bash
+# 查看 ASLR 状态（Linux）
+cat /proc/sys/kernel/randomize_va_space
+# 0 = 关闭, 1 = 部分随机化, 2 = 完全随机化
+
+# 临时关闭 ASLR（调试用，需要 root 权限）
+echo 0 | sudo tee /proc/sys/kernel/randomize_va_space
+
+# 为单个程序禁用 ASLR
+setarch $(uname -m) -R ./program
+```
+
+#### 5. 内存页面（Memory Pages）
+内存以页（Page）为单位管理，典型大小为 4KB：
+
+```c
+#include <stdio.h>
+#include <unistd.h>
+
+int main() {
+    long page_size = sysconf(_SC_PAGESIZE);
+    printf("系统页面大小: %ld 字节\n", page_size);
+    
+    long num_pages = sysconf(_SC_PHYS_PAGES);
+    printf("物理页面数量: %ld\n", num_pages);
+    
+    long avail_pages = sysconf(_SC_AVPHYS_PAGES);
+    printf("可用页面数量: %ld\n", avail_pages);
+    
+    printf("总物理内存: %.2f GB\n", 
+           (double)(num_pages * page_size) / (1024*1024*1024));
+    
+    return 0;
+}
+```
+
+#### 6. 内存映射文件（Memory-Mapped Files）
+可以将文件映射到内存地址空间：
+
+```c
+#include <sys/mman.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdio.h>
+
+void memory_map_example() {
+    int fd = open("data.txt", O_RDONLY);
+    if (fd == -1) return;
+    
+    size_t file_size = lseek(fd, 0, SEEK_END);
+    
+    // 将文件映射到内存
+    char *mapped = mmap(NULL, file_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    if (mapped == MAP_FAILED) {
+        close(fd);
+        return;
+    }
+    
+    // 现在可以像访问数组一样访问文件内容
+    printf("文件第一个字符: %c\n", mapped[0]);
+    
+    munmap(mapped, file_size);
+    close(fd);
+}
+```
 
 ## 代码段（Text Segment）
 
-### 特性
+### 特性详解
 - **存储内容**：程序的机器指令（编译后的二进制代码）
-- **访问权限**：只读（Read-Only），可执行（Executable）
-- **共享性**：多个进程可以共享同一个程序的代码段，节省内存
-- **大小固定**：在程序编译时确定，运行时不变
-- **位置**：通常位于内存的低地址区域
+- **访问权限**：只读（Read-Only），可执行（Executable），权限标记为 `r-x`
+- **共享性**：多个进程可以共享同一个程序的代码段，节省物理内存
+- **大小固定**：在程序编译和链接时确定，运行时不可改变
+- **位置**：通常位于虚拟内存的低地址区域（在某些系统上）
+- **对齐**：通常对齐到页边界（4KB），便于内存管理
+- **缓存优化**：CPU 指令缓存（I-Cache）专门缓存代码段
+
+### 代码段的组成部分
+
+#### 1. 函数机器指令
+所有函数（包括 main、库函数）的编译后的机器码：
+
+```c
+#include <stdio.h>
+
+// 这个函数编译后会变成机器指令存储在代码段
+int add(int a, int b) {
+    return a + b;
+}
+
+int main() {
+    int result = add(3, 4);
+    printf("Result: %d\n", result);
+    return 0;
+}
+```
+
+查看编译后的汇编代码：
+```bash
+# 编译并生成汇编代码
+gcc -S -O0 program.c -o program.s
+
+# 或者查看反汇编
+gcc -c program.c -o program.o
+objdump -d program.o
+
+# 输出示例（x86-64）：
+# 0000000000000000 <add>:
+#    0:   55                      push   %rbp
+#    1:   48 89 e5                mov    %rsp,%rbp
+#    4:   89 7d fc                mov    %edi,-0x4(%rbp)
+#    7:   89 75 f8                mov    %esi,-0x8(%rbp)
+#    a:   8b 55 fc                mov    -0x4(%rbp),%edx
+#    d:   8b 45 f8                mov    -0x8(%rbp),%eax
+#   10:   01 d0                   add    %edx,%eax
+#   12:   5d                      pop    %rbp
+#   13:   c3                      retq
+```
+
+#### 2. 字符串字面量（String Literals）
+使用双引号定义的字符串存储在代码段的只读数据区（.rodata）：
+
+```c
+#include <stdio.h>
+
+int main() {
+    // 这些字符串字面量存储在代码段（只读）
+    const char *str1 = "Hello, World!";
+    const char *str2 = "Hello, World!";
+    
+    // 编译器优化：相同的字符串可能共享同一份内存
+    printf("str1 地址: %p\n", (void*)str1);
+    printf("str2 地址: %p\n", (void*)str2);
+    printf("地址相同吗？ %s\n", (str1 == str2) ? "是" : "否");
+    
+    // 字符数组在栈上，可以修改
+    char arr1[] = "Hello, World!";
+    char arr2[] = "Hello, World!";
+    
+    printf("arr1 地址: %p\n", (void*)arr1);
+    printf("arr2 地址: %p\n", (void*)arr2);
+    printf("地址相同吗？ %s\n", (arr1 == arr2) ? "是" : "否");  // 总是 "否"
+    
+    // 可以修改数组内容
+    arr1[0] = 'h';  // OK
+    // str1[0] = 'h';  // 段错误！不能修改代码段
+    
+    return 0;
+}
+```
+
+#### 3. 常量数据
+包括 const 全局变量、枚举常量、某些字面量：
+
+```c
+// const 全局变量可能在 .rodata 段
+const int MAX_SIZE = 100;
+const double PI = 3.14159265359;
+const char *ERROR_MSG = "An error occurred";
+
+// 数组常量
+const int lookup_table[] = {1, 2, 4, 8, 16, 32, 64, 128};
+
+int main() {
+    // MAX_SIZE = 200;  // 编译错误：不能修改 const 变量
+    
+    printf("MAX_SIZE 地址: %p\n", (void*)&MAX_SIZE);
+    printf("PI 地址: %p\n", (void*)&PI);
+    printf("lookup_table 地址: %p\n", (void*)lookup_table);
+    
+    return 0;
+}
+```
+
+#### 4. 跳转表（Jump Tables）
+用于优化 switch 语句：
+
+```c
+#include <stdio.h>
+
+void demonstrate_jump_table(int value) {
+    // 对于连续的 case 值，编译器可能生成跳转表
+    switch (value) {
+        case 0:  printf("Zero\n");  break;
+        case 1:  printf("One\n");   break;
+        case 2:  printf("Two\n");   break;
+        case 3:  printf("Three\n"); break;
+        case 4:  printf("Four\n");  break;
+        case 5:  printf("Five\n");  break;
+        default: printf("Other\n"); break;
+    }
+}
+
+int main() {
+    demonstrate_jump_table(3);
+    return 0;
+}
+```
+
+查看生成的跳转表：
+```bash
+gcc -O2 -c program.c -o program.o
+objdump -d program.o
+# 会看到类似的跳转表结构
+```
 
 ### 存储内容详解
 1. **函数代码**：所有函数的机器指令
@@ -92,9 +536,181 @@ int main() {
 ```
 
 ### 为什么代码段是只读的？
-1. **安全性**：防止程序意外或恶意修改自己的代码
-2. **共享**：多个进程可以共享同一份代码，节省物理内存
-3. **稳定性**：避免代码被破坏导致程序崩溃
+
+#### 1. 安全性（Security）
+防止程序意外或恶意修改自己的代码。如果代码段可写，恶意代码可以：
+- 修改程序逻辑，绕过安全检查
+- 注入恶意指令（代码注入攻击）
+- 破坏程序的正常执行流程
+
+```c
+// 假设代码段可写（实际上不行）
+void hypothetical_attack() {
+    // 尝试修改 main 函数的第一条指令
+    unsigned char *main_ptr = (unsigned char*)main;
+    // main_ptr[0] = 0xC3;  // RET 指令，立即返回
+    // 这会导致程序一启动就退出
+}
+```
+
+#### 2. 共享性（Sharing）
+多个进程可以共享同一份代码，极大节省物理内存：
+
+```
+假设 10 个用户同时运行 Firefox：
+- 代码段大小：约 200MB
+- 如果可写：需要 200MB × 10 = 2GB 物理内存
+- 只读共享：只需要 200MB 物理内存（共享）+ 每个进程的数据段
+
+节省：1.8GB 物理内存！
+```
+
+演示代码共享：
+```c
+// 编译这个程序
+// gcc -o shared_demo shared_demo.c
+
+#include <stdio.h>
+#include <unistd.h>
+
+int main() {
+    printf("进程 PID: %d\n", getpid());
+    printf("main 函数地址: %p\n", (void*)main);
+    
+    // 保持运行，以便检查内存映射
+    printf("按 Enter 继续...\n");
+    getchar();
+    
+    return 0;
+}
+```
+
+在另一个终端运行：
+```bash
+# 启动两个实例
+./shared_demo &
+./shared_demo &
+
+# 查看内存映射（代码段共享）
+ps aux | grep shared_demo
+cat /proc/<PID1>/maps | grep shared_demo
+cat /proc/<PID2>/maps | grep shared_demo
+# 代码段的物理地址相同！
+```
+
+#### 3. 稳定性（Stability）
+避免程序bug导致代码被破坏：
+
+```c
+// 常见的缓冲区溢出错误
+void vulnerable_function() {
+    char buffer[10];
+    // 如果这里发生溢出，而代码段在附近...
+    strcpy(buffer, "This is a very long string that overflows");
+    // 如果代码段可写，可能会覆盖附近的函数代码
+}
+```
+
+#### 4. 调试和诊断（Debugging）
+只读特性帮助快速定位问题：
+- 修改代码段会立即触发段错误
+- 明确指示程序存在严重bug
+- 防止问题扩散到其他部分
+
+### 代码段与数据执行保护（DEP/NX）
+
+现代 CPU 支持 NX（No-Execute）位或 DEP（Data Execution Prevention）：
+- 标记数据段、栈、堆为不可执行
+- 防止缓冲区溢出攻击中注入的代码被执行
+- 与只读代码段配合，提供双重保护
+
+```c
+#include <stdio.h>
+#include <string.h>
+#include <sys/mman.h>
+
+void demonstrate_nx_protection() {
+    // 尝试执行栈上的代码（会失败）
+    unsigned char shellcode[] = {
+        0x90,  // NOP
+        0xC3   // RET
+    };
+    
+    void (*func)() = (void(*)())shellcode;
+    printf("尝试执行栈上的代码...\n");
+    // func();  // 段错误！栈不可执行（NX 保护）
+    
+    // 正确方式：使用 mmap 分配可执行内存
+    void *exec_mem = mmap(NULL, 4096, 
+                          PROT_READ | PROT_WRITE | PROT_EXEC,
+                          MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    
+    if (exec_mem != MAP_FAILED) {
+        memcpy(exec_mem, shellcode, sizeof(shellcode));
+        void (*exec_func)() = (void(*)())exec_mem;
+        exec_func();  // 这次可以执行
+        munmap(exec_mem, 4096);
+    }
+}
+```
+
+检查 NX 保护：
+```bash
+# 检查程序是否启用 NX/DEP
+readelf -l program | grep -i stack
+# 如果看到 GNU_STACK 且权限是 RW（而不是 RWE），则 NX 启用
+
+# 或使用 checksec
+checksec --file=program
+```
+
+### 位置无关代码（PIC - Position Independent Code）
+
+为了支持 ASLR 和共享库，代码需要是位置无关的：
+
+```c
+// pic_demo.c
+#include <stdio.h>
+
+int global_var = 42;
+
+int get_value() {
+    return global_var;  // 访问全局变量
+}
+
+int main() {
+    printf("Value: %d\n", get_value());
+    printf("global_var 地址: %p\n", (void*)&global_var);
+    printf("get_value 地址: %p\n", (void*)get_value);
+    return 0;
+}
+```
+
+编译为 PIC：
+```bash
+# 非 PIC（默认）
+gcc -o non_pic pic_demo.c
+
+# PIC（用于共享库或 PIE 可执行文件）
+gcc -fPIC -o pic pic_demo.c
+
+# PIE（位置无关可执行文件）
+gcc -fPIE -pie -o pie pic_demo.c
+
+# 查看差异
+readelf -h non_pic | grep Type
+readelf -h pie | grep Type
+
+# 多次运行，PIE 版本地址会变化（ASLR）
+./pie
+./pie
+```
+
+PIC 代码的特点：
+- 使用相对寻址而不是绝对地址
+- 通过 GOT（Global Offset Table）访问全局数据
+- 通过 PLT（Procedure Linkage Table）调用外部函数
+- 稍微降低性能（额外的间接寻址），但提高安全性
 
 ### 查看代码段
 ```bash
@@ -349,41 +965,330 @@ int main() {
 
 ### 栈帧（Stack Frame）详解
 
-每次函数调用都会创建一个栈帧，包含以下内容：
+每次函数调用都会创建一个栈帧（也叫活动记录），包含该函数执行所需的所有信息。
+
+#### 栈帧的完整结构
 
 ```
-栈帧结构（从高地址到低地址）：
-┌─────────────────┐  ← 高地址
-│  函数参数       │  参数从右到左入栈
-├─────────────────┤
-│  返回地址       │  函数返回后继续执行的位置
-├─────────────────┤
-│  旧的帧指针     │  保存调用者的栈帧位置
-├─────────────────┤  ← 当前帧指针（BP/FP）
-│  局部变量       │  函数内声明的变量
-├─────────────────┤
-│  保存的寄存器   │  需要保留的寄存器值
-├─────────────────┤
-│  临时数据       │  表达式计算的中间结果
-└─────────────────┘  ← 栈指针（SP），低地址
+栈帧结构（从高地址到低地址，x86-64 架构）：
+
+高地址
+┌─────────────────────┐
+│  参数 N             │  ← 如果参数超过 6 个（x86-64）
+│  ...                │     前 6 个通过寄存器传递
+│  参数 7             │     多余的参数压入栈
+├─────────────────────┤
+│  返回地址           │  ← call 指令自动压入
+│  (Return Address)   │     存储调用后的下一条指令地址
+│                     │     函数返回时，pop 到 IP 寄存器
+├─────────────────────┤
+│  旧的帧指针 (RBP)   │  ← push %rbp
+│  (Saved Frame Ptr)  │     保存调用者的栈帧基址
+├─────────────────────┤  ← 当前 RBP（帧指针）指向这里
+│                     │     mov %rsp, %rbp
+│  局部变量 1         │  ← sub $N, %rsp 分配空间
+│  local1             │  
+├─────────────────────┤     访问方式：
+│  局部变量 2         │     local1: -8(%rbp)
+│  buffer[100]        │     buffer: -108(%rbp)
+│  (数组)             │     local2: -112(%rbp)
+├─────────────────────┤
+│  局部变量 3         │  
+│  local2             │  
+├─────────────────────┤
+│  保存的寄存器       │  ← 如果函数需要使用被调用者
+│  (Callee-saved)     │     保存寄存器（RBX, R12-R15）
+│  如 RBX, R12        │     必须在函数开始时保存
+├─────────────────────┤     在函数返回前恢复
+│  临时变量空间       │  
+│  (Temporary Space)  │  ← 用于表达式求值
+├─────────────────────┤     复杂计算的中间结果
+│  对齐填充           │  
+│  (Padding)          │  ← 保持栈 16 字节对齐（x86-64 ABI）
+└─────────────────────┘  ← 当前 RSP（栈指针）指向这里
+低地址
+
+关键寄存器（x86-64）：
+- RSP（Stack Pointer）: 始终指向栈顶（当前可用位置）
+- RBP（Base/Frame Pointer）: 指向当前栈帧的基址
+- RIP（Instruction Pointer）: 指向当前执行的指令
+
+32 位系统（x86）使用 ESP、EBP、EIP
 ```
 
-示例代码：
+#### 详细示例代码
 ```c
-void func(int param1, int param2) {
+#include <stdio.h>
+
+void show_addresses(int param1, int param2) {
     int local1 = 10;
     char buffer[100];
     int local2 = 20;
     
-    // 此时栈帧包含：
-    // - param1, param2（参数）
-    // - 返回地址
-    // - 旧的帧指针
-    // - local1（局部变量）
-    // - buffer[100]（局部数组）
-    // - local2（局部变量）
+    printf("\n=== 栈帧地址分析 ===\n");
+    
+    // 参数地址（可能在栈上或寄存器中）
+    printf("param1 地址: %p\n", (void*)&param1);
+    printf("param2 地址: %p\n", (void*)&param2);
+    
+    // 局部变量地址（从高到低）
+    printf("local1 地址: %p\n", (void*)&local1);
+    printf("buffer 地址: %p\n", (void*)buffer);
+    printf("local2 地址: %p\n", (void*)&local2);
+    
+    // 计算地址差（观察内存布局）
+    printf("\nlocal1 到 buffer: %ld 字节\n", 
+           (char*)&local1 - (char*)buffer);
+    printf("buffer 到 local2: %ld 字节\n", 
+           (char*)buffer - (char*)&local2);
+    
+    // 尝试访问返回地址（危险！仅用于演示）
+    void **frame_ptr = (void**)__builtin_frame_address(0);
+    printf("\n当前帧指针: %p\n", frame_ptr);
+    printf("返回地址: %p\n", *(frame_ptr + 1));
+}
+
+int main() {
+    printf("调用 show_addresses()...\n");
+    show_addresses(100, 200);
+    return 0;
 }
 ```
+
+#### 栈帧的创建和销毁过程
+
+**函数调用时（Prologue - 序言）：**
+```assembly
+; 调用者（Caller）的操作：
+call show_addresses    ; 1. 压入返回地址到栈
+                      ; 2. 跳转到函数入口
+
+; 被调用者（Callee）的操作：
+show_addresses:
+    push %rbp          ; 3. 保存旧的帧指针
+    mov %rsp, %rbp     ; 4. 设置新的帧指针
+    sub $128, %rsp     ; 5. 为局部变量分配空间
+    
+    ; 如果需要，保存被调用者保存寄存器
+    push %rbx
+    push %r12
+    
+    ; 函数体代码...
+```
+
+**函数返回时（Epilogue - 尾声）：**
+```assembly
+    ; 恢复被调用者保存寄存器
+    pop %r12
+    pop %rbx
+    
+    ; 恢复栈和帧指针
+    mov %rbp, %rsp     ; 6. 恢复栈指针
+    pop %rbp           ; 7. 恢复旧的帧指针
+    ret                ; 8. 弹出返回地址并跳转
+```
+
+#### 实际查看栈帧
+
+使用 GDB 调试器：
+```bash
+# 编译时添加调试信息
+gcc -g -O0 -o stack_demo stack_demo.c
+
+# 使用 GDB
+gdb ./stack_demo
+
+(gdb) break show_addresses
+(gdb) run
+(gdb) info frame          # 查看当前栈帧信息
+(gdb) info locals         # 查看局部变量
+(gdb) info args           # 查看参数
+(gdb) backtrace           # 查看调用栈
+(gdb) x/20xg $rsp         # 查看栈内存（16进制）
+(gdb) x/20xg $rbp         # 从帧指针开始查看
+```
+
+输出示例：
+```
+Stack level 0, frame at 0x7fffffffe000:
+ rip = 0x555555555189 in show_addresses; saved rip = 0x5555555551c5
+ called by frame at 0x7fffffffe020
+ Arglist at 0x7fffffffdf88, args: param1=100, param2=200
+ Locals at 0x7fffffffdf88, Previous frame's sp is 0x7fffffffe000
+ Saved registers:
+  rbp at 0x7fffffffdf88, rip at 0x7fffffffdf90
+```
+
+#### 栈帧与函数调用约定
+
+不同架构和编译器有不同的调用约定（Calling Convention）：
+
+| 调用约定 | 参数传递 | 栈清理 | 适用 |
+|----------|---------|--------|------|
+| **cdecl** | 栈（从右到左） | 调用者 | x86 C 默认 |
+| **stdcall** | 栈（从右到左） | 被调用者 | Win32 API |
+| **fastcall** | 寄存器 + 栈 | 被调用者 | 性能优化 |
+| **System V AMD64** | 前6个用寄存器 | 调用者 | x86-64 Linux |
+| **MS x64** | 前4个用寄存器 | 调用者 | x86-64 Windows |
+
+示例：
+```c
+// System V AMD64 调用约定（Linux x86-64）
+void func(int a, int b, int c, int d, int e, int f, int g, int h) {
+    // 参数传递方式：
+    // a -> RDI 寄存器
+    // b -> RSI 寄存器  
+    // c -> RDX 寄存器
+    // d -> RCX 寄存器
+    // e -> R8 寄存器
+    // f -> R9 寄存器
+    // g -> 栈（第 1 个栈参数）
+    // h -> 栈（第 2 个栈参数）
+}
+```
+
+查看实际的调用约定：
+```bash
+gcc -S -masm=intel program.c -o program.s
+cat program.s
+# 查看参数如何传递
+```
+
+#### 栈帧链（Frame Chain）
+
+多层函数调用形成栈帧链：
+
+```c
+#include <stdio.h>
+
+void level3() {
+    int var3 = 3;
+    printf("Level 3, var3 at: %p\n", &var3);
+    
+    // 遍历栈帧链
+    void **fp = (void**)__builtin_frame_address(0);
+    printf("Frame 0 (level3): %p\n", fp);
+    
+    fp = (void**)*fp;  // 跟随帧指针链
+    printf("Frame 1 (level2): %p\n", fp);
+    
+    fp = (void**)*fp;
+    printf("Frame 2 (level1): %p\n", fp);
+    
+    fp = (void**)*fp;
+    printf("Frame 3 (main): %p\n", fp);
+}
+
+void level2() {
+    int var2 = 2;
+    printf("Level 2, var2 at: %p\n", &var2);
+    level3();
+}
+
+void level1() {
+    int var1 = 1;
+    printf("Level 1, var1 at: %p\n", &var1);
+    level2();
+}
+
+int main() {
+    int var0 = 0;
+    printf("Main, var0 at: %p\n", &var0);
+    level1();
+    return 0;
+}
+```
+
+运行结果会显示：
+```
+Main, var0 at: 0x7fffffffe00c
+Level 1, var1 at: 0x7fffffffdfec
+Level 2, var2 at: 0x7fffffffdfc c
+Level 3, var3 at: 0x7fffffffdfac
+Frame 0 (level3): 0x7fffffffdfa0
+Frame 1 (level2): 0x7fffffffdfc0
+Frame 2 (level1): 0x7fffffffdfe0
+Frame 3 (main): 0x7fffffffe000
+```
+
+观察：地址递减（栈向下增长），帧指针形成链表。
+
+#### 栈帧优化：帧指针省略（FPO）
+
+编译器优化可以省略帧指针，节省寄存器：
+
+```c
+// 不使用 -fomit-frame-pointer
+void func_with_fp(int x) {
+    int local = x + 1;
+    printf("%d\n", local);
+}
+
+// 使用 -fomit-frame-pointer
+void func_without_fp(int x) {
+    int local = x + 1;
+    printf("%d\n", local);
+}
+```
+
+编译对比：
+```bash
+# 保留帧指针
+gcc -S -O2 -o with_fp.s func.c
+
+# 省略帧指针（优化）
+gcc -S -O2 -fomit-frame-pointer -o without_fp.s func.c
+
+# 对比汇编代码
+diff with_fp.s without_fp.s
+```
+
+省略帧指针的影响：
+- ✅ 节省一个寄存器（RBP）
+- ✅ 减少函数序言/尾声指令
+- ✅ 提高性能（约 1-5%）
+- ❌ 调试困难（无法轻易遍历栈帧）
+- ❌ 某些性能分析工具需要帧指针
+
+#### 栈帧与异常处理
+
+栈帧信息对异常处理至关重要：
+
+```c
+#include <stdio.h>
+#include <setjmp.h>
+
+jmp_buf jump_buffer;
+
+void risky_function() {
+    printf("执行危险操作...\n");
+    // 模拟异常
+    longjmp(jump_buffer, 1);
+    printf("这行不会执行\n");
+}
+
+void intermediate() {
+    int local = 42;
+    printf("Intermediate: local = %d at %p\n", local, &local);
+    risky_function();
+}
+
+int main() {
+    if (setjmp(jump_buffer) == 0) {
+        printf("设置跳转点\n");
+        intermediate();
+    } else {
+        printf("捕获到异常，栈已展开\n");
+    }
+    return 0;
+}
+```
+
+现代 C++ 异常处理使用栈展开（Stack Unwinding）：
+- 遍历栈帧链
+- 调用析构函数
+- 恢复寄存器状态
+- 跳转到异常处理代码
 
 ### 栈的优势
 1. **速度快**：分配和释放只需调整栈指针，O(1) 时间复杂度
@@ -620,29 +1525,195 @@ int main() {
 ```
 
 ### 堆内存管理的底层原理
-堆内存管理器（如 glibc 的 malloc 实现）维护一个空闲块链表：
+
+#### 堆内存分配器的实现
+
+堆内存管理器（如 glibc 的 ptmalloc2）需要解决几个关键问题：
+1. 如何跟踪空闲和已分配的内存块
+2. 如何快速找到合适大小的空闲块
+3. 如何减少内存碎片
+4. 如何处理并发访问（多线程）
+
+#### 内存块结构
+
+每个分配的内存块都有一个隐藏的头部（metadata）：
+
+```c
+// 简化的内存块结构
+typedef struct malloc_chunk {
+    size_t prev_size;   // 前一个块的大小（如果前一个块空闲）
+    size_t size;        // 当前块的大小（包含头部）
+                       // 最低 3 位用作标志位：
+                       // - bit 0 (P): 前一个块是否在使用中
+                       // - bit 1 (M): 是否通过 mmap 分配
+                       // - bit 2 (A): 是否属于主arena
+    
+    // 如果块空闲，以下字段存储链表指针：
+    struct malloc_chunk *fd;  // forward: 指向下一个空闲块
+    struct malloc_chunk *bk;  // backward: 指向上一个空闲块
+} malloc_chunk;
+```
+
+内存布局示意图：
 
 ```
-堆内存结构示例：
-┌───────────────┐
-│  空闲块头部    │  包含大小信息和指向下一个空闲块的指针
-├───────────────┤
-│  空闲空间      │
-├───────────────┤
-│  已分配块头部  │
-├───────────────┤
-│  用户数据      │  malloc 返回的指针指向这里
-├───────────────┤
-│  已分配块头部  │
-├───────────────┤
-│  用户数据      │
-└───────────────┘
+已分配块的内存布局：
+┌─────────────────────┐  ← chunk 地址
+│  prev_size          │  4/8 字节（仅当前一块空闲时有效）
+├─────────────────────┤
+│  size | flags       │  4/8 字节
+├─────────────────────┤  ← malloc() 返回的地址
+│                     │
+│  用户数据           │  用户请求的大小
+│  (user data)        │
+│                     │
+├─────────────────────┤
+│  未使用空间         │  对齐填充
+└─────────────────────┘
+
+空闲块的内存布局：
+┌─────────────────────┐
+│  prev_size          │
+├─────────────────────┤
+│  size | flags       │
+├─────────────────────┤
+│  fd（下一个空闲块） │  指针
+├─────────────────────┤
+│  bk（上一个空闲块） │  指针
+├─────────────────────┤
+│  未使用空间         │
+├─────────────────────┤
+│  size（块尾）       │  用于合并
+└─────────────────────┘
 ```
 
-分配策略：
-- **首次适配（First Fit）**：找到第一个足够大的空闲块
-- **最佳适配（Best Fit）**：找到大小最接近的空闲块
-- **最坏适配（Worst Fit）**：找到最大的空闲块
+#### 空闲块管理 - Bins
+
+ptmalloc2 使用多个"bins"（桶）来管理不同大小的空闲块：
+
+```
+Bins 结构：
+
+1. Fast Bins（快速分配箱，10 个）：
+   - 小块内存（16-80 字节，64位系统）
+   - 单向链表（LIFO）
+   - 不合并相邻块（快速）
+   - 用于频繁分配/释放的小对象
+   
+   [16] -> chunk -> chunk -> NULL
+   [24] -> chunk -> NULL
+   [32] -> chunk -> chunk -> chunk -> NULL
+   ...
+
+2. Small Bins（小型箱，62 个）：
+   - 小到中等大小（<512/1024 字节）
+   - 每个 bin 只包含固定大小的块
+   - 双向链表（FIFO，减少碎片）
+   - 相邻空闲块会合并
+   
+   [size 16]  <-> chunk <-> chunk <-> ...
+   [size 24]  <-> chunk <-> chunk <-> ...
+   ...
+
+3. Large Bins（大型箱，63 个）：
+   - 大块内存（>=512/1024 字节）
+   - 每个 bin 包含一个范围的大小
+   - 双向链表，按大小排序
+   - 使用跳表加速查找
+   
+   [512-576)  <-> chunk(560) <-> chunk(520) <-> ...
+   [576-640)  <-> chunk(600) <-> ...
+   ...
+
+4. Unsorted Bin（未排序箱，1 个）：
+   - 临时存储最近释放的块
+   - 下次分配时会重新整理到其他 bins
+   - 用于优化频繁分配/释放的场景
+   
+   chunk <-> chunk <-> chunk <-> ...
+   (各种大小混合)
+```
+
+#### 分配策略对比
+
+| 策略 | 优点 | 缺点 | 适用场景 |
+|------|------|------|----------|
+| **首次适配<br>(First Fit)** | 快速，简单 | 容易产生小碎片 | 通用场景 |
+| **最佳适配<br>(Best Fit)** | 最小化浪费 | 搜索慢，产生微小碎片 | 内存受限 |
+| **最坏适配<br>(Worst Fit)** | 剩余块仍然可用 | 快速耗尽大块 | 特殊场景 |
+| **下次适配<br>(Next Fit)** | 平衡速度和碎片 | 可能产生更多碎片 | 循环分配 |
+
+#### 演示内存碎片
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+
+void demonstrate_fragmentation() {
+    printf("演示内存碎片\n\n");
+    
+    // 分配 10 个 100 字节的块
+    void *blocks[10];
+    for (int i = 0; i < 10; i++) {
+        blocks[i] = malloc(100);
+        printf("分配块 %d: %p\n", i, blocks[i]);
+    }
+    
+    // 释放偶数位置的块（创建碎片）
+    for (int i = 0; i < 10; i += 2) {
+        free(blocks[i]);
+        printf("释放块 %d\n", i);
+    }
+    
+    // 现在堆中有 5 个 100 字节的空闲块（不连续）
+    // 尝试分配一个 300 字节的块
+    void *large = malloc(300);
+    if (large) {
+        printf("\n成功分配 300 字节: %p\n", large);
+        printf("（可能在堆的新位置，因为碎片空间不足）\n");
+        free(large);
+    }
+    
+    // 清理
+    for (int i = 1; i < 10; i += 2) {
+        free(blocks[i]);
+    }
+}
+
+int main() {
+    demonstrate_fragmentation();
+    return 0;
+}
+```
+
+#### 内存对齐
+
+malloc 返回的地址保证满足最大的对齐要求：
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+
+int main() {
+    // 测试对齐
+    for (int i = 0; i < 10; i++) {
+        void *p = malloc(1);  // 只请求 1 字节
+        printf("malloc(1) = %p, 对齐到: ", p);
+        
+        uintptr_t addr = (uintptr_t)p;
+        if (addr % 16 == 0) printf("16 字节\n");
+        else if (addr % 8 == 0) printf("8 字节\n");
+        else printf("其他\n");
+        
+        free(p);
+    }
+    
+    return 0;
+}
+// 64 位系统通常对齐到 16 字节
+// 32 位系统通常对齐到 8 字节
+```
 
 ### 堆内存的高级用法
 ```c
@@ -922,6 +1993,766 @@ gcc -DDEBUG_MEMORY -o program program.c
 2. **系统不稳定**：长期运行可能耗尽系统内存
 3. **程序崩溃**：最终可能因为无法分配内存而失败
 4. **影响其他程序**：占用过多系统资源
+
+### 内存泄漏的实际案例分析
+
+#### 案例 1：Web 服务器中的会话泄漏
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+typedef struct Session {
+    char *user_id;
+    char *session_data;
+    struct Session *next;
+} Session;
+
+Session *session_list = NULL;
+
+// 错误版本：会话创建后从不释放
+Session* create_session_bad(const char *user_id) {
+    Session *s = malloc(sizeof(Session));
+    s->user_id = strdup(user_id);
+    s->session_data = malloc(1024);  // 1KB 会话数据
+    s->next = session_list;
+    session_list = s;
+    
+    // 问题：没有提供删除会话的机制
+    return s;
+}
+
+// 正确版本：提供完整的生命周期管理
+Session* create_session_good(const char *user_id) {
+    Session *s = malloc(sizeof(Session));
+    if (!s) return NULL;
+    
+    s->user_id = strdup(user_id);
+    if (!s->user_id) {
+        free(s);
+        return NULL;
+    }
+    
+    s->session_data = malloc(1024);
+    if (!s->session_data) {
+        free(s->user_id);
+        free(s);
+        return NULL;
+    }
+    
+    s->next = session_list;
+    session_list = s;
+    return s;
+}
+
+void destroy_session(const char *user_id) {
+    Session **curr = &session_list;
+    while (*curr) {
+        if (strcmp((*curr)->user_id, user_id) == 0) {
+            Session *to_delete = *curr;
+            *curr = (*curr)->next;
+            
+            free(to_delete->user_id);
+            free(to_delete->session_data);
+            free(to_delete);
+            return;
+        }
+        curr = &(*curr)->next;
+    }
+}
+
+void cleanup_all_sessions() {
+    while (session_list) {
+        Session *temp = session_list;
+        session_list = session_list->next;
+        
+        free(temp->user_id);
+        free(temp->session_data);
+        free(temp);
+    }
+}
+
+// 模拟长时间运行的服务器
+void simulate_server() {
+    printf("模拟 Web 服务器运行...\n");
+    
+    for (int i = 0; i < 10000; i++) {
+        char user_id[32];
+        snprintf(user_id, sizeof(user_id), "user%d", i);
+        
+        // 创建会话
+        create_session_good(user_id);
+        
+        // 模拟：一半的会话应该被删除
+        if (i % 2 == 0) {
+            destroy_session(user_id);
+        }
+        
+        if (i % 1000 == 0) {
+            printf("已处理 %d 个请求\n", i);
+        }
+    }
+    
+    cleanup_all_sessions();
+    printf("服务器清理完成\n");
+}
+```
+
+#### 案例 2：文件描述符泄漏
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+
+// 错误：可能泄漏文件描述符
+char* read_file_bad(const char *filename) {
+    FILE *fp = fopen(filename, "r");
+    if (!fp) return NULL;
+    
+    fseek(fp, 0, SEEK_END);
+    long size = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+    
+    char *buffer = malloc(size + 1);
+    if (!buffer) {
+        // 错误：忘记关闭文件
+        return NULL;  // 文件描述符泄漏！
+    }
+    
+    fread(buffer, 1, size, fp);
+    buffer[size] = '\0';
+    
+    fclose(fp);
+    return buffer;
+}
+
+// 正确：使用 goto 确保资源释放
+char* read_file_good(const char *filename) {
+    FILE *fp = NULL;
+    char *buffer = NULL;
+    long size;
+    
+    fp = fopen(filename, "r");
+    if (!fp) goto cleanup;
+    
+    if (fseek(fp, 0, SEEK_END) != 0) goto cleanup;
+    size = ftell(fp);
+    if (size < 0) goto cleanup;
+    fseek(fp, 0, SEEK_SET);
+    
+    buffer = malloc(size + 1);
+    if (!buffer) goto cleanup;
+    
+    if (fread(buffer, 1, size, fp) != (size_t)size) {
+        free(buffer);
+        buffer = NULL;
+        goto cleanup;
+    }
+    
+    buffer[size] = '\0';
+    
+cleanup:
+    if (fp) fclose(fp);
+    return buffer;
+}
+
+// 更好：使用 RAII 风格封装
+typedef struct {
+    FILE *fp;
+} FileHandle;
+
+FileHandle* file_open(const char *filename) {
+    FileHandle *fh = malloc(sizeof(FileHandle));
+    if (!fh) return NULL;
+    
+    fh->fp = fopen(filename, "r");
+    if (!fh->fp) {
+        free(fh);
+        return NULL;
+    }
+    
+    return fh;
+}
+
+void file_close(FileHandle **fh) {
+    if (fh && *fh) {
+        if ((*fh)->fp) {
+            fclose((*fh)->fp);
+        }
+        free(*fh);
+        *fh = NULL;
+    }
+}
+
+void demonstrate_file_handling() {
+    FileHandle *fh = file_open("test.txt");
+    if (fh) {
+        // 使用文件...
+        file_close(&fh);
+        // fh 现在是 NULL，安全
+    }
+}
+```
+
+#### 案例 3：循环引用导致的泄漏
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+
+typedef struct Node {
+    int data;
+    struct Node *next;
+    struct Node *prev;  // 双向链表
+} Node;
+
+typedef struct List {
+    Node *head;
+    Node *tail;
+    int count;
+} List;
+
+List* list_create() {
+    List *list = malloc(sizeof(List));
+    if (list) {
+        list->head = NULL;
+        list->tail = NULL;
+        list->count = 0;
+    }
+    return list;
+}
+
+void list_append(List *list, int data) {
+    Node *node = malloc(sizeof(Node));
+    if (!node) return;
+    
+    node->data = data;
+    node->next = NULL;
+    node->prev = list->tail;
+    
+    if (list->tail) {
+        list->tail->next = node;
+    } else {
+        list->head = node;
+    }
+    
+    list->tail = node;
+    list->count++;
+}
+
+// 错误：只释放列表结构，不释放节点
+void list_destroy_bad(List *list) {
+    free(list);  // 泄漏：所有节点都没有释放
+}
+
+// 正确：递归释放所有节点
+void list_destroy_good(List *list) {
+    if (!list) return;
+    
+    Node *current = list->head;
+    while (current) {
+        Node *next = current->next;
+        free(current);
+        current = next;
+    }
+    
+    free(list);
+}
+
+// 展示泄漏的影响
+void demonstrate_list_leak() {
+    printf("创建 1000 个列表，每个 1000 个节点...\n");
+    
+    for (int i = 0; i < 1000; i++) {
+        List *list = list_create();
+        
+        for (int j = 0; j < 1000; j++) {
+            list_append(list, j);
+        }
+        
+        // 使用错误的销毁函数
+        // list_destroy_bad(list);  // 泄漏约 16MB (1000*1000*16字节)
+        
+        // 使用正确的销毁函数
+        list_destroy_good(list);
+        
+        if (i % 100 == 0) {
+            printf("已处理 %d 个列表\n", i);
+        }
+    }
+    
+    printf("完成\n");
+}
+```
+
+#### 案例 4：多线程环境中的泄漏
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+#include <unistd.h>
+
+typedef struct {
+    int id;
+    char *data;
+} ThreadData;
+
+// 错误：线程局部数据从不释放
+void* worker_thread_bad(void *arg) {
+    ThreadData *data = (ThreadData*)arg;
+    
+    printf("Thread %d 开始工作\n", data->id);
+    sleep(1);
+    printf("Thread %d 完成\n", data->id);
+    
+    // 错误：忘记释放 data->data 和 data
+    return NULL;  // 泄漏！
+}
+
+// 正确：释放所有分配的内存
+void* worker_thread_good(void *arg) {
+    ThreadData *data = (ThreadData*)arg;
+    
+    printf("Thread %d 开始工作\n", data->id);
+    sleep(1);
+    printf("Thread %d 完成\n", data->id);
+    
+    // 清理
+    free(data->data);
+    free(data);
+    
+    return NULL;
+}
+
+void spawn_threads(int num_threads) {
+    pthread_t *threads = malloc(num_threads * sizeof(pthread_t));
+    
+    for (int i = 0; i < num_threads; i++) {
+        ThreadData *data = malloc(sizeof(ThreadData));
+        data->id = i;
+        data->data = malloc(1024);  // 1KB 数据
+        
+        pthread_create(&threads[i], NULL, worker_thread_good, data);
+    }
+    
+    // 等待所有线程完成
+    for (int i = 0; i < num_threads; i++) {
+        pthread_join(threads[i], NULL);
+    }
+    
+    free(threads);
+}
+```
+
+### 高级内存泄漏检测技术
+
+#### 1. 使用 Valgrind 的高级功能
+
+```bash
+# 详细的泄漏报告，包括调用栈
+valgrind --leak-check=full \
+         --show-leak-kinds=all \
+         --track-origins=yes \
+         --verbose \
+         --log-file=valgrind-out.txt \
+         ./program
+
+# 生成可视化的调用图
+valgrind --tool=callgrind ./program
+callgrind_annotate callgrind.out.<pid>
+
+# 或使用 kcachegrind 图形化查看
+kcachegrind callgrind.out.<pid>
+```
+
+Valgrind 输出解读：
+```
+==12345== LEAK SUMMARY:
+==12345==    definitely lost: 400 bytes in 1 blocks
+==12345==    indirectly lost: 800 bytes in 2 blocks
+==12345==      possibly lost: 200 bytes in 1 blocks
+==12345==    still reachable: 1,000 bytes in 5 blocks
+==12345==         suppressed: 0 bytes in 0 blocks
+
+definitely lost: 确定的泄漏，必须修复
+indirectly lost: 间接泄漏（通过已泄漏的指针引用）
+possibly lost: 可能的泄漏（内部指针）
+still reachable: 程序结束时仍可达，通常不是问题
+```
+
+#### 2. 使用 AddressSanitizer 的详细选项
+
+```bash
+# 编译时启用 ASan
+gcc -fsanitize=address \
+    -fsanitize=leak \
+    -fno-omit-frame-pointer \
+    -g -O1 \
+    -o program program.c
+
+# 运行时设置选项
+ASAN_OPTIONS=detect_leaks=1:leak_check_at_exit=1 ./program
+
+# 其他有用的选项
+ASAN_OPTIONS=\
+detect_leaks=1:\
+leak_check_at_exit=1:\
+log_path=asan.log:\
+verbosity=1:\
+halt_on_error=0:\
+print_summary=1 \
+./program
+```
+
+#### 3. 实现自己的内存跟踪器
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#ifdef MEMORY_TRACK
+
+typedef struct MemRecord {
+    void *ptr;
+    size_t size;
+    const char *file;
+    int line;
+    struct MemRecord *next;
+} MemRecord;
+
+static MemRecord *mem_records = NULL;
+static size_t total_allocated = 0;
+static size_t total_freed = 0;
+static int allocation_count = 0;
+static int free_count = 0;
+
+void* track_malloc(size_t size, const char *file, int line) {
+    void *ptr = malloc(size);
+    if (!ptr) return NULL;
+    
+    MemRecord *record = malloc(sizeof(MemRecord));
+    if (!record) {
+        free(ptr);
+        return NULL;
+    }
+    
+    record->ptr = ptr;
+    record->size = size;
+    record->file = file;
+    record->line = line;
+    record->next = mem_records;
+    mem_records = record;
+    
+    total_allocated += size;
+    allocation_count++;
+    
+    printf("[ALLOC] %p: %zu bytes at %s:%d (total: %zu bytes, count: %d)\n",
+           ptr, size, file, line, total_allocated, allocation_count);
+    
+    return ptr;
+}
+
+void track_free(void *ptr, const char *file, int line) {
+    if (!ptr) return;
+    
+    MemRecord **curr = &mem_records;
+    while (*curr) {
+        if ((*curr)->ptr == ptr) {
+            MemRecord *to_delete = *curr;
+            *curr = (*curr)->next;
+            
+            total_freed += to_delete->size;
+            free_count++;
+            
+            printf("[FREE] %p: %zu bytes at %s:%d (freed: %zu bytes, count: %d)\n",
+                   ptr, to_delete->size, file, line, total_freed, free_count);
+            
+            free(to_delete);
+            free(ptr);
+            return;
+        }
+        curr = &(*curr)->next;
+    }
+    
+    printf("[ERROR] 尝试释放未跟踪的指针 %p at %s:%d\n", ptr, file, line);
+    free(ptr);  // 仍然释放，避免崩溃
+}
+
+void print_memory_leaks() {
+    printf("\n========== 内存泄漏报告 ==========\n");
+    printf("总分配: %zu bytes (%d 次)\n", total_allocated, allocation_count);
+    printf("总释放: %zu bytes (%d 次)\n", total_freed, free_count);
+    printf("泄漏: %zu bytes (%d 次)\n", 
+           total_allocated - total_freed, 
+           allocation_count - free_count);
+    
+    if (mem_records) {
+        printf("\n未释放的内存块:\n");
+        MemRecord *curr = mem_records;
+        while (curr) {
+            printf("  %p: %zu bytes at %s:%d\n",
+                   curr->ptr, curr->size, curr->file, curr->line);
+            curr = curr->next;
+        }
+    } else {
+        printf("\n没有检测到内存泄漏！✓\n");
+    }
+    printf("===================================\n");
+}
+
+#define malloc(size) track_malloc(size, __FILE__, __LINE__)
+#define free(ptr) track_free(ptr, __FILE__, __LINE__)
+
+#endif // MEMORY_TRACK
+
+// 测试代码
+int main() {
+    int *a = malloc(100);
+    int *b = malloc(200);
+    char *c = malloc(300);
+    
+    free(a);
+    // 忘记释放 b
+    free(c);
+    
+#ifdef MEMORY_TRACK
+    print_memory_leaks();
+#endif
+    
+    return 0;
+}
+```
+
+编译和运行：
+```bash
+gcc -DMEMORY_TRACK -o program program.c
+./program
+```
+
+输出：
+```
+[ALLOC] 0x5555557592a0: 100 bytes at program.c:120 (total: 100 bytes, count: 1)
+[ALLOC] 0x555555759310: 200 bytes at program.c:121 (total: 300 bytes, count: 2)
+[ALLOC] 0x5555557593e0: 300 bytes at program.c:122 (total: 600 bytes, count: 3)
+[FREE] 0x5555557592a0: 100 bytes at program.c:124 (freed: 100 bytes, count: 1)
+[FREE] 0x5555557593e0: 300 bytes at program.c:126 (freed: 400 bytes, count: 2)
+
+========== 内存泄漏报告 ==========
+总分配: 600 bytes (3 次)
+总释放: 400 bytes (2 次)
+泄漏: 200 bytes (1 次)
+
+未释放的内存块:
+  0x555555759310: 200 bytes at program.c:121
+===================================
+```
+
+### 防止内存泄漏的最佳实践
+
+#### 1. 使用智能指针模式（C 中模拟）
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+
+// 定义清理函数类型
+typedef void (*cleanup_func_t)(void*);
+
+// 智能指针结构
+typedef struct {
+    void *ptr;
+    cleanup_func_t cleanup;
+} smart_ptr_t;
+
+// 创建智能指针
+smart_ptr_t smart_ptr_create(void *ptr, cleanup_func_t cleanup) {
+    smart_ptr_t sp = {ptr, cleanup};
+    return sp;
+}
+
+// 释放智能指针
+void smart_ptr_destroy(smart_ptr_t *sp) {
+    if (sp && sp->ptr) {
+        if (sp->cleanup) {
+            sp->cleanup(sp->ptr);
+        }
+        sp->ptr = NULL;
+    }
+}
+
+// 使用宏简化语法
+#define AUTO_FREE __attribute__((cleanup(auto_free_cleanup)))
+
+void auto_free_cleanup(void *p) {
+    void **ptr = (void**)p;
+    if (*ptr) {
+        free(*ptr);
+        *ptr = NULL;
+    }
+}
+
+void example_with_auto_free() {
+    AUTO_FREE char *str = malloc(100);
+    AUTO_FREE int *numbers = malloc(10 * sizeof(int));
+    
+    // 使用 str 和 numbers...
+    
+    // 函数结束时自动释放，无需手动 free
+}
+
+// GCC 特有的 cleanup 属性示例
+void demonstrate_cleanup_attribute() {
+    __attribute__((cleanup(auto_free_cleanup))) 
+    char *buffer = malloc(1024);
+    
+    if (buffer) {
+        strcpy(buffer, "Hello, World!");
+        printf("%s\n", buffer);
+    }
+    
+    // buffer 自动释放
+}
+```
+
+#### 2. 资源获取即初始化（RAII）模式
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+
+// 文件资源封装
+typedef struct {
+    FILE *fp;
+    char *buffer;
+} FileResource;
+
+FileResource* file_resource_create(const char *filename) {
+    FileResource *res = malloc(sizeof(FileResource));
+    if (!res) return NULL;
+    
+    res->fp = fopen(filename, "r");
+    if (!res->fp) {
+        free(res);
+        return NULL;
+    }
+    
+    res->buffer = malloc(4096);
+    if (!res->buffer) {
+        fclose(res->fp);
+        free(res);
+        return NULL;
+    }
+    
+    return res;
+}
+
+void file_resource_destroy(FileResource **res) {
+    if (res && *res) {
+        if ((*res)->buffer) free((*res)->buffer);
+        if ((*res)->fp) fclose((*res)->fp);
+        free(*res);
+        *res = NULL;
+    }
+}
+
+void process_file_safe(const char *filename) {
+    FileResource *res = file_resource_create(filename);
+    if (!res) return;
+    
+    // 处理文件...
+    
+    file_resource_destroy(&res);
+    // res 现在是 NULL
+}
+```
+
+#### 3. 内存池技术
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+
+typedef struct MemoryPool {
+    void *memory;
+    size_t size;
+    size_t used;
+    size_t peak_usage;
+} MemoryPool;
+
+MemoryPool* pool_create(size_t size) {
+    MemoryPool *pool = malloc(sizeof(MemoryPool));
+    if (!pool) return NULL;
+    
+    pool->memory = malloc(size);
+    if (!pool->memory) {
+        free(pool);
+        return NULL;
+    }
+    
+    pool->size = size;
+    pool->used = 0;
+    pool->peak_usage = 0;
+    
+    return pool;
+}
+
+void* pool_alloc(MemoryPool *pool, size_t size) {
+    // 对齐到 8 字节边界
+    size = (size + 7) & ~7;
+    
+    if (pool->used + size > pool->size) {
+        printf("内存池空间不足\n");
+        return NULL;
+    }
+    
+    void *ptr = (char*)pool->memory + pool->used;
+    pool->used += size;
+    
+    if (pool->used > pool->peak_usage) {
+        pool->peak_usage = pool->used;
+    }
+    
+    return ptr;
+}
+
+void pool_reset(MemoryPool *pool) {
+    pool->used = 0;
+}
+
+void pool_destroy(MemoryPool *pool) {
+    if (pool) {
+        printf("内存池统计:\n");
+        printf("  总大小: %zu bytes\n", pool->size);
+        printf("  峰值使用: %zu bytes (%.1f%%)\n", 
+               pool->peak_usage, 
+               (double)pool->peak_usage / pool->size * 100);
+        
+        free(pool->memory);
+        free(pool);
+    }
+}
+
+// 使用示例
+void use_memory_pool() {
+    MemoryPool *pool = pool_create(1024 * 1024);  // 1MB
+    
+    // 分配多个对象
+    int *numbers = pool_alloc(pool, 100 * sizeof(int));
+    char *string = pool_alloc(pool, 256);
+    
+    // 使用对象...
+    
+    // 重置池（不需要单独释放每个对象）
+    pool_reset(pool);
+    
+    // 可以重新使用
+    float *floats = pool_alloc(pool, 50 * sizeof(float));
+    
+    pool_destroy(pool);
+}
 
 ## 栈溢出（Stack Overflow）
 
