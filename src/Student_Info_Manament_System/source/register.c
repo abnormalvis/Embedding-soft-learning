@@ -1,4 +1,11 @@
 #include "global.h"
+/*
+注册需求分析：
+- 用户输入用户名和密码
+- 确认密码输入一致
+- 保存用户信息，进行文件操作（此处简化为打印输出）
+- 回到主界面
+*/
 void register_flow(void)
 {
     char username[64];
