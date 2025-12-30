@@ -19,4 +19,12 @@
 
 #define GENDER_MALE 'M'
 #define GENDER_FEMALE 'F'
+
+// 用户操作枚举体
+enum
+{
+    user_login = 1,
+    user_register,
+    exit_system
+};
 #endif // !CONFIG_H

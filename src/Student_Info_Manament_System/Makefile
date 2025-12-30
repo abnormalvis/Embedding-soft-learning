@@ -1,27 +1,25 @@
-CC := gcc
-CFLAGS := -Wall -Wextra -Iinclude -g
-SRCDIR := source
-BINDIR := build
-TARGET := $(BINDIR)/student_ui_test
+CURDIR=$(shell pwd)
+INCDIR=$(CURDIR)/include
+SRCDIR=$(CURDIR)/source
 
-SRCS := $(SRCDIR)/main_test.c $(SRCDIR)/ui_display.c $(SRCDIR)/stubs.c
-OBJS := $(patsubst $(SRCDIR)/%.c,$(BINDIR)/%.o,$(SRCS))
+CPPFLAGS=-I$(INCDIR)
+# 指定编译所用的编译器
+CC = gcc
+TARGET = main  # 最终生成的可执行文件名
+SRCS = $(wildcard *.c) # 当前目录下的所有C源文件
+SRCS += $(foreach dir,$(SRCDIR),$(wildcard $(dir)/*.c)) # 添加源文件目录下的所有C源文件
+OBJS = $(patsubst %.c,%.o, $(SRCS)) # 将源文件名转换为对应的目标文件名
 
-.PHONY: all clean run
-
+# all : $(TARGET) 定义默认构建目标 all，依赖于 $(TARGET)（通常是最终生成的可执行文件或库）
 all: $(TARGET)
+$(TARGET):$(OBJS)	# 定义 $(TARGET)的构建规则，依赖于所有 .o文件（$(OBJS)）
+	$(CC)  $(OBJS) -o $@	# 相当于 gcc *.o -o main
 
-$(BINDIR):
-	mkdir -p $(BINDIR)
-
-$(BINDIR)/%.o: $(SRCDIR)/%.c | $(BINDIR)
-	$(CC) $(CFLAGS) -c $< -o $@
-
-$(TARGET): $(OBJS) | $(BINDIR)
-	$(CC) $(CFLAGS) $^ -o $@
-
-run: all
-	$(TARGET)
+%.o:%.c
+	$(CC) $(CPPFLAGS) -c $< -o $@ 
 
 clean:
-	rm -rf $(BINDIR)
+	rm -rf ./*.o
+	rm -rf $(SRCDIR)/*.o
+	rm ./main
+	make clean -C source

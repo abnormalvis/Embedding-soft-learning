@@ -1,12 +1,33 @@
 #ifndef GLOBAL_H
 #define GLOBAL_H
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
-#include "config.h"
-#include "ui_display.h"
-#include "login.h"
-#include "register.h"
-#include "student.h"
+#define MAX_NAME_LEN 10
+typedef struct
+{
+    int id;
+    char name[MAX_NAME_LEN];
+    char sex;
+    int age;
+} studentBase;
+
+typedef struct
+{
+    char user[16];     /* 用户名 */
+    char password[16]; /* 密码 */
+} studentAccout;
+
+typedef struct
+{
+    int Chinese;
+    int Maths;
+    int English;
+} StudentScore;
+
+typedef struct
+{
+    studentBase stubase_;
+    StudentScore studscore_;
+    studentAccout stuaccout_;
+} studentInfo;
+
 #endif // !GLOBAL_H
