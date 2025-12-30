@@ -76,7 +76,7 @@ void set_student_info(studentInfo *student)
     if (student->stubase_.id != 0)
     {
         printf("\n当前信息:\n");
-        printf("  学号: %d\n", student->stubase_.id);
+        printf("  学号: %lld\n", student->stubase_.id);
         printf("  姓名: %s\n", student->stubase_.name);
         printf("  性别: %c\n", student->stubase_.sex);
         printf("  年龄: %d\n", student->stubase_.age);
@@ -84,12 +84,13 @@ void set_student_info(studentInfo *student)
     }
     
     printf("请输入学号: ");
-    scanf("%d", &student->stubase_.id);
+    scanf("%lld", &student->stubase_.id);
     clear_input_buffer();
     
     printf("请输入姓名: ");
-    scanf("%9s", student->stubase_.name);
-    clear_input_buffer();
+    fgets(student->stubase_.name, MAX_NAME_LEN, stdin);
+    // 移除fgets读取的换行符
+    student->stubase_.name[strcspn(student->stubase_.name, "\n")] = '\0';
     
     printf("请输入性别 (M/F): ");
     scanf("%c", &student->stubase_.sex);
@@ -127,7 +128,7 @@ void view_my_scores(studentInfo *student)
     
     printf("\n%s基本信息:%s\n", COLOR_BLUE, COLOR_RESET);
     printf("  用户名: %s\n", student->stuaccout_.user);
-    printf("  学号: %d\n", student->stubase_.id);
+    printf("  学号: %lld\n", student->stubase_.id);
     printf("  姓名: %s\n", student->stubase_.name);
     printf("  性别: %c\n", student->stubase_.sex);
     printf("  年龄: %d\n", student->stubase_.age);

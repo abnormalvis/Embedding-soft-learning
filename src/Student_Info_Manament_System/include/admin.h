@@ -24,6 +24,6 @@ void delete_student_info(void);
 int find_student_by_username(const char *username, studentInfo *result);
 
 // 根据学号查找学生
-int find_student_by_id(int id, studentInfo *result);
+int find_student_by_id(long long id, studentInfo *result);
 
 #endif // ADMIN_H

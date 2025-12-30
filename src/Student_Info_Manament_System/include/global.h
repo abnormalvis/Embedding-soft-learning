@@ -2,7 +2,7 @@
 #define GLOBAL_H
 
 #define MAX_NAME_LEN 10
-
+#define STUDENT_ID_TYPE long long
 // 用户角色枚举
 typedef enum {
     ROLE_STUDENT = 0,  // 学生角色
@@ -11,7 +11,7 @@ typedef enum {
 
 typedef struct
 {
-    int id;            // 学号
+    long long id;      // 学号（支持大数字，如3124000893）
     char name[MAX_NAME_LEN];
     char sex;
     int age;

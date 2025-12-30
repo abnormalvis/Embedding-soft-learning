@@ -98,7 +98,7 @@ int find_student_by_username(const char *username, studentInfo *result)
 }
 
 // 根据学号查找学生
-int find_student_by_id(int id, studentInfo *result)
+int find_student_by_id(long long id, studentInfo *result)
 {
     FILE *fp = fopen(DATA_FILE, "r");
     if (fp == NULL)
@@ -149,7 +149,7 @@ void add_student_score(void)
     
     printf("\n当前学生信息:\n");
     printf("  用户名: %s\n", student.stuaccout_.user);
-    printf("  学号: %d\n", student.stubase_.id);
+    printf("  学号: %lld\n", student.stubase_.id);
     printf("  姓名: %s\n", student.stubase_.name);
     
     printf("\n请输入成绩:\n");
@@ -207,9 +207,9 @@ void modify_student_score(void)
     printf("%s         修改学生成绩         %s\n", COLOR_BLUE, COLOR_RESET);
     print_line(COLOR_BLUE);
     
-    int id;
+    long long id;
     printf("请输入学生学号: ");
-    scanf("%d", &id);
+    scanf("%lld", &id);
     clear_input_buffer();
     
     studentInfo student;
@@ -220,7 +220,7 @@ void modify_student_score(void)
     }
     
     printf("\n当前学生信息:\n");
-    printf("  学号: %d\n", student.stubase_.id);
+    printf("  学号: %lld\n", student.stubase_.id);
     printf("  姓名: %s\n", student.stubase_.name);
     printf("  语文: %d\n", student.studscore_.Chinese);
     printf("  数学: %d\n", student.studscore_.Maths);
@@ -288,7 +288,7 @@ void view_all_students(void)
         return;
     }
     
-    printf("\n%-6s %-12s %-10s %-6s %-6s %-6s\n", 
+    printf("\n%-12s %-12s %-10s %-6s %-6s %-6s\n", 
            "学号", "用户名", "姓名", "语文", "数学", "英语");
     print_line(COLOR_CYAN);
     
@@ -299,7 +299,7 @@ void view_all_students(void)
     {
         if (temp.stuaccout_.role == ROLE_STUDENT)
         {
-            printf("%-6d %-12s %-10s %-6d %-6d %-6d\n",
+            printf("%-12lld %-12s %-10s %-6d %-6d %-6d\n",
                    temp.stubase_.id,
                    temp.stuaccout_.user,
                    temp.stubase_.name[0] ? temp.stubase_.name : "(未设置)",
@@ -345,7 +345,7 @@ void delete_student_info(void)
     
     printf("\n将删除以下学生信息:\n");
     printf("  用户名: %s\n", student.stuaccout_.user);
-    printf("  学号: %d\n", student.stubase_.id);
+    printf("  学号: %lld\n", student.stubase_.id);
     printf("  姓名: %s\n", student.stubase_.name);
     
     char confirm;
