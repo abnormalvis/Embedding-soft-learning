@@ -3,6 +3,8 @@
 #include <string.h>
 #include "config.h"
 #include "ui_display.h"
+#include "admin.h"
+#include "student.h"
 
 /*
 登陆需求分析：
@@ -25,64 +27,54 @@ void login_flow(studentInfo *stuinfo, studentInfo *stutemp)
     
     Login_Display();
     
-    printf("\n请输入用户名：");
+    printf("\n%s请输入用户名：%s", COLOR_GREEN, COLOR_RESET);
     scanf("%15s", username);
-    clear_input_buffer(); // 清理输入缓冲区
+    clear_input_buffer();
     
-    printf("请输入密码：");
+    printf("%s请输入密码：%s", COLOR_GREEN, COLOR_RESET);
     scanf("%15s", password);
-    clear_input_buffer(); // 清理输入缓冲区
+    clear_input_buffer();
     
-    // 保存输入的用户名和密码到stutemp
+    // 检查是否为管理员登录
+    if (strcmp(username, ADMIN_USERNAME) == 0 && 
+        strcmp(password, ADMIN_PASSWORD) == 0)
+    {
+        // 管理员登录
+        memset(stutemp, 0, sizeof(studentInfo));
+        strncpy(stutemp->stuaccout_.user, username, sizeof(stutemp->stuaccout_.user) - 1);
+        strncpy(stutemp->stuaccout_.password, password, sizeof(stutemp->stuaccout_.password) - 1);
+        stutemp->stuaccout_.role = ROLE_ADMIN;
+        
+        User_Login_Success_Display();
+        printf("\n%s欢迎管理员：%s%s\n", COLOR_CYAN, username, COLOR_RESET);
+        
+        memcpy(stuinfo, stutemp, sizeof(studentInfo));
+        admin_menu(stuinfo);
+        return;
+    }
+    
+    // 普通用户登录
     strncpy(stutemp->stuaccout_.user, username, sizeof(stutemp->stuaccout_.user) - 1);
     stutemp->stuaccout_.user[sizeof(stutemp->stuaccout_.user) - 1] = '\0';
     strncpy(stutemp->stuaccout_.password, password, sizeof(stutemp->stuaccout_.password) - 1);
     stutemp->stuaccout_.password[sizeof(stutemp->stuaccout_.password) - 1] = '\0';
     
-    // 验证登录
     int result = login_judge(stutemp);
     
     if (result == SUCCESS)
     {
         User_Login_Success_Display();
-        // 将登录信息复制到stuinfo
         memcpy(stuinfo, stutemp, sizeof(studentInfo));
         
-        // 显示用户主菜单并等待用户操作
-        User_Main_Menu_Display();
+        printf("\n%s欢迎学生：%s%s\n", COLOR_BLUE, username, COLOR_RESET);
         
-        // 简单的用户菜单交互
-        char buf[32];
-        int choice;
-        printf("\n请选择操作 (1-3)：");
-        if (fgets(buf, sizeof(buf), stdin) != NULL)
-        {
-            if (sscanf(buf, "%d", &choice) == 1)
-            {
-                switch (choice)
-                {
-                case 1:
-                    printf("\n=== 个人信息 ===\n");
-                    printf("用户名：%s\n", stuinfo->stuaccout_.user);
-                    printf("(更多功能开发中...)\n");
-                    break;
-                case 2:
-                    printf("\n修改个人信息功能开发中...\n");
-                    break;
-                case 3:
-                    printf("\n退出登录，返回主菜单。\n");
-                    break;
-                default:
-                    printf("\n无效选项。\n");
-                    break;
-                }
-            }
-        }
+        // 进入学生菜单
+        student_menu(stuinfo);
     }
     else
     {
         Login_Failed_Display();
-        printf("\n账号或密码错误！如果还没有账号，请先注册。\n");
+        printf("\n%s账号或密码错误！如果还没有账号，请先注册。%s\n", COLOR_RED, COLOR_RESET);
     }
 }
 

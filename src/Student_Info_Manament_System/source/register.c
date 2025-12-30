@@ -70,6 +70,7 @@ void Register_Flow(studentInfo *stuinfo, studentInfo *stutemp)
     stutemp->stuaccout_.user[sizeof(stutemp->stuaccout_.user) - 1] = '\0';
     strncpy(stutemp->stuaccout_.password, password, sizeof(stutemp->stuaccout_.password) - 1);
     stutemp->stuaccout_.password[sizeof(stutemp->stuaccout_.password) - 1] = '\0';
+    stutemp->stuaccout_.role = ROLE_STUDENT;  // 设置为学生角色
     
     // 写入文件
     fp = fopen(DATA_FILE, "a");

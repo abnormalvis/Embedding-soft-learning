@@ -21,5 +21,5 @@ $(TARGET):$(OBJS)	# 定义 $(TARGET)的构建规则，依赖于所有 .o文件�
 clean:
 	rm -rf ./*.o
 	rm -rf $(SRCDIR)/*.o
-	rm ./main
-	make clean -C source
+	rm -f ./main
+	-make clean -C source 2>/dev/null
