@@ -20,6 +20,9 @@ void view_all_students(void);
 // 删除学生信息
 void delete_student_info(void);
 
+// 通过学号查看学生详细信息
+void view_student_by_id(void);
+
 // 根据用户名查找学生
 int find_student_by_username(const char *username, studentInfo *result);
 

@@ -37,16 +37,17 @@ void admin_menu(studentInfo *admin)
         printf("  2) 修改学生成绩\n");
         printf("  3) 查看所有学生\n");
         printf("  4) 删除学生信息\n");
-        printf("  5) 退出登录\n");
+        printf("  5) 查看学生信息(按学号)\n");
+        printf("  6) 退出登录\n");
         print_line(COLOR_CYAN);
-        printf("%s请选择操作 (1-5): %s", COLOR_GREEN, COLOR_RESET);
+        printf("%s请选择操作 (1-6): %s", COLOR_GREEN, COLOR_RESET);
         
         if (fgets(buf, sizeof(buf), stdin) == NULL)
             break;
             
         if (sscanf(buf, "%d", &choice) != 1)
         {
-            printf("%s无效输入，请输入数字 1-5。%s\n", COLOR_RED, COLOR_RESET);
+            printf("%s无效输入，请输入数字 1-6。%s\n", COLOR_RED, COLOR_RESET);
             continue;
         }
         
@@ -65,6 +66,9 @@ void admin_menu(studentInfo *admin)
                 delete_student_info();
                 break;
             case 5:
+                view_student_by_id();
+                break;
+            case 6:
                 printf("%s\n退出管理员登录。\n%s", COLOR_YELLOW, COLOR_RESET);
                 return;
             default:
@@ -431,4 +435,53 @@ void delete_student_info(void)
     rename("data/temp.dat", DATA_FILE);
     
     printf("%s\n学生信息已删除！%s\n", COLOR_GREEN, COLOR_RESET);
+}
+
+// 通过学号查看学生详细信息
+void view_student_by_id(void)
+{
+    printf("\n");
+    print_line(COLOR_MAGENTA);
+    printf("%s         查看学生信息(按学号)         %s\n", COLOR_MAGENTA, COLOR_RESET);
+    print_line(COLOR_MAGENTA);
+    
+    long long id;
+    printf("请输入学生学号: ");
+    scanf("%lld", &id);
+    clear_input_buffer();
+    
+    studentInfo student;
+    if (find_student_by_id(id, &student) == FAILURE)
+    {
+        printf("%s错误：找不到该学号的学生！%s\n", COLOR_RED, COLOR_RESET);
+        return;
+    }
+    
+    // 显示详细信息
+    printf("\n");
+    print_line(COLOR_CYAN);
+    printf("%s         学生详细信息         %s\n", COLOR_CYAN, COLOR_RESET);
+    print_line(COLOR_CYAN);
+    
+    printf("\n%s基本信息:%s\n", COLOR_YELLOW, COLOR_RESET);
+    printf("  用户名: %s\n", student.stuaccout_.user);
+    printf("  学号: %lld\n", student.stubase_.id);
+    printf("  姓名: %s\n", student.stubase_.name[0] ? student.stubase_.name : "(未设置)");
+    printf("  性别: %c\n", student.stubase_.sex ? student.stubase_.sex : '-');
+    printf("  年龄: %d\n", student.stubase_.age > 0 ? student.stubase_.age : 0);
+    
+    printf("\n%s成绩信息:%s\n", COLOR_YELLOW, COLOR_RESET);
+    printf("  语文: %d\n", student.studscore_.Chinese);
+    printf("  数学: %d\n", student.studscore_.Maths);
+    printf("  英语: %d\n", student.studscore_.English);
+    
+    // 计算总分和平均分
+    int total = student.studscore_.Chinese + student.studscore_.Maths + student.studscore_.English;
+    double average = total / 3.0;
+    
+    printf("\n%s统计信息:%s\n", COLOR_YELLOW, COLOR_RESET);
+    printf("  总分: %d\n", total);
+    printf("  平均分: %.2f\n", average);
+    
+    print_line(COLOR_CYAN);
 }
