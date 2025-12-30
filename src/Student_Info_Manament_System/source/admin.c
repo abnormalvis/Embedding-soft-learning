@@ -127,30 +127,30 @@ void add_student_score(void)
     printf("%s         添加学生成绩         %s\n", COLOR_BLUE, COLOR_RESET);
     print_line(COLOR_BLUE);
     
-    char username[16];
-    printf("请输入学生用户名: ");
-    scanf("%15s", username);
+    long long id;
+    printf("请输入学生学号: ");
+    scanf("%lld", &id);
     clear_input_buffer();
     
     studentInfo student;
-    if (find_student_by_username(username, &student) == FAILURE)
+    if (find_student_by_id(id, &student) == FAILURE)
     {
-        printf("%s错误：找不到该学生！%s\n", COLOR_RED, COLOR_RESET);
+        printf("%s错误：找不到该学号的学生！%s\n", COLOR_RED, COLOR_RESET);
         return;
     }
     
-    // 检查学生是否已有学号
-    if (student.stubase_.id == 0)
+    // 检查学生是否已设置基本信息
+    if (student.stubase_.name[0] == '\0')
     {
-        printf("%s该学生还未设置学号，请先让学生登录并设置学号。%s\n", 
+        printf("%s该学生还未设置基本信息，请先让学生登录并设置个人信息。%s\n", 
                COLOR_YELLOW, COLOR_RESET);
         return;
     }
     
     printf("\n当前学生信息:\n");
-    printf("  用户名: %s\n", student.stuaccout_.user);
     printf("  学号: %lld\n", student.stubase_.id);
     printf("  姓名: %s\n", student.stubase_.name);
+    printf("  用户名: %s\n", student.stuaccout_.user);
     
     printf("\n请输入成绩:\n");
     printf("  语文: ");
@@ -180,7 +180,7 @@ void add_student_score(void)
     studentInfo temp;
     while (fread(&temp, sizeof(studentInfo), 1, fp) == 1)
     {
-        if (strcmp(temp.stuaccout_.user, username) == 0)
+        if (temp.stubase_.id == id && temp.stuaccout_.role == ROLE_STUDENT)
         {
             fwrite(&student, sizeof(studentInfo), 1, temp_fp);
         }
@@ -222,22 +222,66 @@ void modify_student_score(void)
     printf("\n当前学生信息:\n");
     printf("  学号: %lld\n", student.stubase_.id);
     printf("  姓名: %s\n", student.stubase_.name);
-    printf("  语文: %d\n", student.studscore_.Chinese);
-    printf("  数学: %d\n", student.studscore_.Maths);
-    printf("  英语: %d\n", student.studscore_.English);
+    printf("  当前成绩:\n");
+    printf("    语文: %d\n", student.studscore_.Chinese);
+    printf("    数学: %d\n", student.studscore_.Maths);
+    printf("    英语: %d\n", student.studscore_.English);
     
-    printf("\n请输入新的成绩:\n");
-    printf("  语文: ");
-    scanf("%d", &student.studscore_.Chinese);
-    clear_input_buffer();
+    printf("\n%s开始修改成绩（输入y修改，n跳过）%s\n", COLOR_YELLOW, COLOR_RESET);
     
-    printf("  数学: ");
-    scanf("%d", &student.studscore_.Maths);
-    clear_input_buffer();
+    char choice;
+    int new_score;
     
-    printf("  英语: ");
-    scanf("%d", &student.studscore_.English);
+    // 语文成绩
+    printf("\n是否修改语文成绩？(y/n): ");
+    scanf("%c", &choice);
     clear_input_buffer();
+    if (choice == 'y' || choice == 'Y')
+    {
+        printf("  请输入新的语文成绩: ");
+        scanf("%d", &new_score);
+        clear_input_buffer();
+        student.studscore_.Chinese = new_score;
+        printf("%s  ✓ 语文成绩已更新为: %d%s\n", COLOR_GREEN, new_score, COLOR_RESET);
+    }
+    else
+    {
+        printf("  语文成绩保持不变: %d\n", student.studscore_.Chinese);
+    }
+    
+    // 数学成绩
+    printf("\n是否修改数学成绩？(y/n): ");
+    scanf("%c", &choice);
+    clear_input_buffer();
+    if (choice == 'y' || choice == 'Y')
+    {
+        printf("  请输入新的数学成绩: ");
+        scanf("%d", &new_score);
+        clear_input_buffer();
+        student.studscore_.Maths = new_score;
+        printf("%s  ✓ 数学成绩已更新为: %d%s\n", COLOR_GREEN, new_score, COLOR_RESET);
+    }
+    else
+    {
+        printf("  数学成绩保持不变: %d\n", student.studscore_.Maths);
+    }
+    
+    // 英语成绩
+    printf("\n是否修改英语成绩？(y/n): ");
+    scanf("%c", &choice);
+    clear_input_buffer();
+    if (choice == 'y' || choice == 'Y')
+    {
+        printf("  请输入新的英语成绩: ");
+        scanf("%d", &new_score);
+        clear_input_buffer();
+        student.studscore_.English = new_score;
+        printf("%s  ✓ 英语成绩已更新为: %d%s\n", COLOR_GREEN, new_score, COLOR_RESET);
+    }
+    else
+    {
+        printf("  英语成绩保持不变: %d\n", student.studscore_.English);
+    }
     
     // 更新文件
     FILE *fp = fopen(DATA_FILE, "r");
