@@ -1,3 +1,4 @@
+
 #include "../include/doubly_linked_list.h"
 
 #include <stdlib.h>
@@ -15,6 +16,46 @@ static doubly_node *dll_new_node(int value)
     return n;
 }
 
+static doubly_node *dll_nth_node(const doubly_list *list, int index)
+{
+    // 调用方保证 index 合法: 0..length-1
+    // 使用哨兵节点：从头或尾选择更近方向遍历
+    if (index <= list->length / 2)
+    {
+        doubly_node *cur = list->sentinel->next;
+        for (int i = 0; i < index; i++)
+        {
+            cur = cur->next;
+        }
+        return cur;
+    }
+    else
+    {
+        doubly_node *cur = list->sentinel->prev;
+        for (int i = list->length - 1; i > index; i--)
+        {
+            cur = cur->prev;
+        }
+        return cur;
+    }
+}
+
+static void dll_link_between(doubly_node *prev, doubly_node *next, doubly_node *node)
+{
+    node->prev = prev;
+    node->next = next;
+    prev->next = node;
+    next->prev = node;
+}
+
+static void dll_unlink_node(doubly_node *node)
+{
+    node->prev->next = node->next;
+    node->next->prev = node->prev;
+    node->prev = NULL;
+    node->next = NULL;
+}
+
 doubly_list *dll_init(void)
 {
     doubly_list *list = (doubly_list *)malloc(sizeof(doubly_list));
@@ -23,8 +64,20 @@ doubly_list *dll_init(void)
         fprintf(stderr, "Failed to allocate memory for doubly linked list\n");
         return NULL;
     }
-    list->head = NULL;
-    list->tail = NULL;
+
+    doubly_node *sentinel = dll_new_node(0);
+    if (sentinel == NULL)
+    {
+        fprintf(stderr, "Failed to allocate memory for sentinel node\n");
+        free(list);
+        return NULL;
+    }
+
+    // 循环哨兵：空表 next/prev 都指向自己
+    sentinel->next = sentinel;
+    sentinel->prev = sentinel;
+
+    list->sentinel = sentinel;
     list->length = 0;
     return list;
 }
@@ -35,16 +88,20 @@ void dll_destroy(doubly_list *list)
     {
         return;
     }
-    doubly_node *cur = list->head;
-    while (cur != NULL)
+
+    if (list->sentinel != NULL)
     {
-        doubly_node *next = cur->next;
-        free(cur);
-        cur = next;
+        doubly_node *cur = list->sentinel->next;
+        while (cur != list->sentinel)
+        {
+            doubly_node *next = cur->next;
+            free(cur);
+            cur = next;
+        }
+        free(list->sentinel);
+        list->sentinel = NULL;
     }
 
-    list->head = NULL;
-    list->tail = NULL;
     list->length = 0;
     free(list);
 }
@@ -59,24 +116,9 @@ int dll_length(const doubly_list *list)
     return (list != NULL) ? list->length : 0;
 }
 
-bool dll_push_front(doubly_list *list, int value)
-{
-    return dll_insert_at(list, 0, value);
-}
-
-bool dll_push_back(doubly_list *list, int value)
-{
-    if (list == NULL)
-    {
-        fprintf(stderr, "Error: list is NULL\n");
-        return false;
-    }
-    return dll_insert_at(list, list->length, value);
-}
-
 bool dll_insert_at(doubly_list *list, int index, int value)
 {
-    if (list == NULL)
+    if (list == NULL || list->sentinel == NULL)
     {
         fprintf(stderr, "Error: list is NULL\n");
         return false;
@@ -94,66 +136,56 @@ bool dll_insert_at(doubly_list *list, int index, int value)
         return false;
     }
 
-    // 空表
+    // 插入位置：在“第 index 个节点”前插入
+    // index == length => 在哨兵前插入（尾插）
+    doubly_node *next = (index == list->length) ? list->sentinel : dll_nth_node(list, index);
+    doubly_node *prev = next->prev;
+    dll_link_between(prev, next, n);
+    list->length++;
+    return true;
+}
+
+bool dll_push_front(doubly_list *list, int value)
+{
+    return dll_insert_at(list, 0, value);
+}
+
+bool dll_push_back(doubly_list *list, int value)
+{
+    if (list == NULL)
+    {
+        fprintf(stderr, "Error: list is NULL\n");
+        return false;
+    }
+    return dll_insert_at(list, list->length, value);
+}
+
+bool dll_delete_at(doubly_list *list, int index, int *out_value)
+{
+    if (list == NULL || list->sentinel == NULL)
+    {
+        fprintf(stderr, "Error: list is NULL\n");
+        return false;
+    }
     if (list->length == 0)
     {
-        list->head = n;
-        list->tail = n;
-        list->length = 1;
-        return true;
+        fprintf(stderr, "Error: list is empty\n");
+        return false;
     }
-
-    // 头插
-    if (index == 0)
+    if (index < 0 || index >= list->length)
     {
-        n->next = list->head;
-        list->head->prev = n;
-        list->head = n;
-        list->length++;
-        return true;
-    }
-
-    // 尾插
-    if (index == list->length)
-    {
-        n->prev = list->tail;
-        list->tail->next = n;
-        list->tail = n;
-        list->length++;
-        return true;
-    }
-
-    // 中间插入：找到 index 位置的节点（插入在它前面）
-    doubly_node *cur = NULL;
-    if (index <= list->length / 2)
-    {
-        cur = list->head;
-        for (int i = 0; i < index; i++)
-        {
-            cur = cur->next;
-        }
-    }
-    else
-    {
-        cur = list->tail;
-        for (int i = list->length; i > index; i--)
-        {
-            cur = cur->prev;
-        }
-    }
-
-    if (cur == NULL || cur->prev == NULL)
-    {
-        fprintf(stderr, "Error: corrupted list structure (unexpected NULL)\n");
-        free(n);
+        fprintf(stderr, "Error: index %d out of range [0, %d)\n", index, list->length);
         return false;
     }
 
-    n->prev = cur->prev;
-    n->next = cur;
-    cur->prev->next = n;
-    cur->prev = n;
-    list->length++;
+    doubly_node *node = dll_nth_node(list, index);
+    if (out_value != NULL)
+    {
+        *out_value = node->data;
+    }
+    dll_unlink_node(node);
+    free(node);
+    list->length--;
     return true;
 }
 
@@ -172,107 +204,9 @@ bool dll_pop_back(doubly_list *list, int *out_value)
     return dll_delete_at(list, list->length - 1, out_value);
 }
 
-bool dll_delete_at(doubly_list *list, int index, int *out_value)
-{
-    if (list == NULL)
-    {
-        fprintf(stderr, "Error: list is NULL\n");
-        return false;
-    }
-    if (list->length == 0)
-    {
-        fprintf(stderr, "Error: list is empty\n");
-        return false;
-    }
-    if (index < 0 || index >= list->length)
-    {
-        fprintf(stderr, "Error: index %d out of range [0, %d)\n", index, list->length);
-        return false;
-    }
-
-    // 单节点
-    if (list->length == 1)
-    {
-        if (out_value != NULL)
-        {
-            *out_value = list->head->data;
-        }
-        free(list->head);
-        list->head = NULL;
-        list->tail = NULL;
-        list->length = 0;
-        return true;
-    }
-
-    // 删除头
-    if (index == 0)
-    {
-        doubly_node *old = list->head;
-        if (out_value != NULL)
-        {
-            *out_value = old->data;
-        }
-        list->head = old->next;
-        list->head->prev = NULL;
-        free(old);
-        list->length--;
-        return true;
-    }
-
-    // 删除尾
-    if (index == list->length - 1)
-    {
-        doubly_node *old = list->tail;
-        if (out_value != NULL)
-        {
-            *out_value = old->data;
-        }
-        list->tail = old->prev;
-        list->tail->next = NULL;
-        free(old);
-        list->length--;
-        return true;
-    }
-
-    // 删除中间
-    doubly_node *cur = NULL;
-    if (index <= list->length / 2)
-    {
-        cur = list->head;
-        for (int i = 0; i < index; i++)
-        {
-            cur = cur->next;
-        }
-    }
-    else
-    {
-        cur = list->tail;
-        for (int i = list->length - 1; i > index; i--)
-        {
-            cur = cur->prev;
-        }
-    }
-
-    if (cur == NULL || cur->prev == NULL || cur->next == NULL)
-    {
-        fprintf(stderr, "Error: corrupted list structure (unexpected NULL)\n");
-        return false;
-    }
-
-    if (out_value != NULL)
-    {
-        *out_value = cur->data;
-    }
-    cur->prev->next = cur->next;
-    cur->next->prev = cur->prev;
-    free(cur);
-    list->length--;
-    return true;
-}
-
 bool dll_get_at(const doubly_list *list, int index, int *out_value)
 {
-    if (list == NULL || out_value == NULL)
+    if (list == NULL || list->sentinel == NULL || out_value == NULL)
     {
         fprintf(stderr, "Error: NULL pointer\n");
         return false;
@@ -283,36 +217,19 @@ bool dll_get_at(const doubly_list *list, int index, int *out_value)
         return false;
     }
 
-    doubly_node *cur = NULL;
-    if (index <= list->length / 2)
-    {
-        cur = list->head;
-        for (int i = 0; i < index; i++)
-        {
-            cur = cur->next;
-        }
-    }
-    else
-    {
-        cur = list->tail;
-        for (int i = list->length - 1; i > index; i--)
-        {
-            cur = cur->prev;
-        }
-    }
-
-    *out_value = cur->data;
+    doubly_node *node = dll_nth_node(list, index);
+    *out_value = node->data;
     return true;
 }
 
 int dll_find_first(const doubly_list *list, int value)
 {
-    if (list == NULL)
+    if (list == NULL || list->sentinel == NULL)
     {
         return -1;
     }
     int i = 0;
-    for (doubly_node *cur = list->head; cur != NULL; cur = cur->next)
+    for (doubly_node *cur = list->sentinel->next; cur != list->sentinel; cur = cur->next)
     {
         if (cur->data == value)
         {
@@ -325,16 +242,16 @@ int dll_find_first(const doubly_list *list, int value)
 
 void dll_print_forward(const doubly_list *list)
 {
-    if (list == NULL)
+    if (list == NULL || list->sentinel == NULL)
     {
         printf("DLL: (null)\n");
         return;
     }
     printf("DLL forward (len=%d): [", list->length);
-    for (doubly_node *cur = list->head; cur != NULL; cur = cur->next)
+    for (doubly_node *cur = list->sentinel->next; cur != list->sentinel; cur = cur->next)
     {
         printf("%d", cur->data);
-        if (cur->next != NULL)
+        if (cur->next != list->sentinel)
         {
             printf(", ");
         }
@@ -344,16 +261,16 @@ void dll_print_forward(const doubly_list *list)
 
 void dll_print_backward(const doubly_list *list)
 {
-    if (list == NULL)
+    if (list == NULL || list->sentinel == NULL)
     {
         printf("DLL: (null)\n");
         return;
     }
     printf("DLL backward (len=%d): [", list->length);
-    for (doubly_node *cur = list->tail; cur != NULL; cur = cur->prev)
+    for (doubly_node *cur = list->sentinel->prev; cur != list->sentinel; cur = cur->prev)
     {
         printf("%d", cur->data);
-        if (cur->prev != NULL)
+        if (cur->prev != list->sentinel)
         {
             printf(", ");
         }

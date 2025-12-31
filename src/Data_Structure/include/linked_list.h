@@ -9,10 +9,12 @@
 typedef struct node {
     int data;
     struct node *next;
+    
 } node;
 
 typedef struct linked_list {
     node *head;
+    node *tail;  // 维护一个尾指针
     int length;
 } linked_list;
 

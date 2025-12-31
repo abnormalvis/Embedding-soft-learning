@@ -18,8 +18,9 @@ typedef struct doubly_node
 
 typedef struct doubly_list
 {
-    doubly_node *head;
-    doubly_node *tail;
+    // 哨兵节点（dummy/sentinel）：构成循环双向链表
+    // 空表时：sentinel->next == sentinel && sentinel->prev == sentinel
+    doubly_node *sentinel;
     int length;
 } doubly_list;
 

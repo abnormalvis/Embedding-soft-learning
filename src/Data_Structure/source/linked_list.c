@@ -6,6 +6,7 @@ linked_list *init_linked_list(void)
     if (list != NULL)
     {
         list->head = NULL;
+        list->tail = NULL;
         list->length = 0;
         return list;
     }
@@ -36,16 +37,15 @@ void append_node(int data, linked_list *list)
 
         if (list->head == NULL)
         {
+            // 空表：head/tail 同时指向新节点
             list->head = new_node;
+            list->tail = new_node;
         }
         else
         {
-            node *current = list->head;
-            while (current->next != NULL)
-            {
-                current = current->next;
-            }
-            current->next = new_node;
+            // 有尾指针：尾插 O(1)
+            list->tail->next = new_node;
+            list->tail = new_node;
         }
         list->length++;
     }
@@ -83,10 +83,32 @@ void insert_node(int data, linked_list *list, int index)
         // 头部插入
         new_node->next = list->head;
         list->head = new_node;
+
+        // 如果原来是空表，需要同步维护 tail
+        if (list->tail == NULL)
+        {
+            list->tail = new_node;
+        }
     }
     else
     {
         // 中间或尾部插入
+        // 如果是尾插，直接使用 tail 可减少遍历（仍保持逻辑清晰）
+        if (index == list->length)
+        {
+            if (list->tail == NULL)
+            {
+                // 防御：length 不为 0 但 tail 为空
+                fprintf(stderr, "Error: corrupted list structure (tail is NULL)\n");
+                free(new_node);
+                return;
+            }
+            list->tail->next = new_node;
+            list->tail = new_node;
+            list->length++;
+            return;
+        }
+
         // 寻找第 index-1 个节点
         node *prev = list->head;
         for (int i = 0; i < index - 1; i++)
@@ -135,6 +157,12 @@ void delete_node(linked_list *list, int index)
             return;
         }
         list->head = to_delete->next;
+
+        // 删除后如果变为空表，需要同步 tail
+        if (list->head == NULL)
+        {
+            list->tail = NULL;
+        }
         free(to_delete);
         list->length--;
         return;
@@ -160,6 +188,12 @@ void delete_node(linked_list *list, int index)
 
     to_delete = prev->next;
     prev->next = to_delete->next;
+
+    // 如果删除的是尾节点，需要更新 tail
+    if (to_delete == list->tail)
+    {
+        list->tail = prev;
+    }
     free(to_delete);
     list->length--;
 }
@@ -179,6 +213,7 @@ void destroy_linked_list(linked_list *list)
     // current == NULL
     list->length = 0;
     list->head = NULL;
+    list->tail = NULL;
     free(list);
 }
 
