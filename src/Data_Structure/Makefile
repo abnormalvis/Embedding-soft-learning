@@ -9,31 +9,44 @@ CC = gcc
 
 # 目标程序
 TEST_TARGET=$(BUILDDIR)/test_sequential_list
+DLL_TEST_TARGET=$(BUILDDIR)/test_doubly_linked_list
 MAIN_TARGET=$(BUILDDIR)/main
 
 # 源文件
 TEST_SRCS = test_sequential_list.c 
 TEST_SRCS += $(wildcard source/*.c)
+
+DLL_TEST_SRCS = test_doubly_linked_list.c
+DLL_TEST_SRCS += $(wildcard source/*.c)
 MAIN_SRCS = main.c 
 MAIN_SRCS += $(wildcard source/*.c)
 
 # 目标文件
 TEST_OBJS = $(addprefix $(BUILDDIR)/, $(notdir $(TEST_SRCS:.c=.o)))
+DLL_TEST_OBJS = $(addprefix $(BUILDDIR)/, $(notdir $(DLL_TEST_SRCS:.c=.o)))
 MAIN_OBJS = $(addprefix $(BUILDDIR)/, $(notdir $(MAIN_SRCS:.c=.o)))
 
-.PHONY: all test clean mkdir
+.PHONY: all test dll-test clean mkdir
 
-all: mkdir $(TEST_TARGET) $(MAIN_TARGET)
+all: mkdir $(TEST_TARGET) $(DLL_TEST_TARGET) $(MAIN_TARGET)
 
 # 测试程序
 test: $(TEST_TARGET)
 	@echo "Running tests..."
 	@$(TEST_TARGET)
 
+dll-test: $(DLL_TEST_TARGET)
+	@echo "Running DLL tests..."
+	@$(DLL_TEST_TARGET)
+
 # 编译测试程序
 $(TEST_TARGET): $(TEST_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^
 	@echo "Built test program: $@"
+
+$(DLL_TEST_TARGET): $(DLL_TEST_OBJS)
+	$(CC) $(CFLAGS) -o $@ $^
+	@echo "Built DLL test program: $@"
 
 # 编译主程序
 $(MAIN_TARGET): $(MAIN_OBJS)

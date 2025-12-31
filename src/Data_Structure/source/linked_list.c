@@ -181,3 +181,21 @@ void destroy_linked_list(linked_list *list)
     list->head = NULL;
     free(list);
 }
+
+void show_linked_list(const linked_list *list)
+{
+    if (list == NULL)
+    {
+        fprintf(stderr, "Error: linked list is NULL\n");
+        return;
+    }
+
+    node *current = list->head;
+    printf("Linked list contents: ");
+    while (current != NULL)
+    {
+        printf("%d -> ", current->data);
+        current = current->next;
+    }
+    printf("NULL\n");
+}
