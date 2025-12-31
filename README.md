@@ -245,4 +245,23 @@ make
 ./demo
 ```
 
+## 数据结构
+
+### 编译运行测试
+```bash
+cd src/Data_Structure
+make
+./build $(可执行文件)
+
+# make clean # 清理
+``` 
+### 顺序表
+
+### 链表
+
+- 可改进方向：把尾插法改为头插法, 提高插入的效率
+- 添加虚拟头节点`dummy-head`，`dummy-head`不存储数据
+### 双向链表
+
+
 ## 日志
