@@ -11,17 +11,20 @@ CC = gcc
 SEQ_TEST_TARGET=$(BUILDDIR)/test_sequential_list
 DLL_TEST_TARGET=$(BUILDDIR)/test_doubly_linked_list
 LL_TEST_TARGET=$(BUILDDIR)/test_linked_list
+QUEUE_TEST_TARGET=$(BUILDDIR)/test_list_queue
 MAIN_TARGET=$(BUILDDIR)/main
 
 # 模块源文件（按需链接，避免把其它 demo/main 一起链接进来导致 multiple definition）
 SEQ_MODULE_SRCS = source/sequential_list.c
 DLL_MODULE_SRCS = source/doubly_linked_list.c
 LL_MODULE_SRCS  = source/linked_list.c
+QUEUE_MODULE_SRCS = source/list_queue.c
 
 # 各目标的源文件
 SEQ_TEST_SRCS = test_sequential_list.c $(SEQ_MODULE_SRCS)
 DLL_TEST_SRCS = test_doubly_linked_list.c $(DLL_MODULE_SRCS)
 LL_TEST_SRCS  = test_linked_list.c $(LL_MODULE_SRCS)
+QUEUE_TEST_SRCS = test_list_queue.c $(QUEUE_MODULE_SRCS)
 
 # 主程序：只链接 main.c + 你希望在主程序里使用的模块
 # 当前 main.c 只演示栈(list_stack)，因此只链接对应实现；避免引入其它模块造成命名冲突。
@@ -31,12 +34,13 @@ MAIN_SRCS = main.c source/list_stack.c
 SEQ_TEST_OBJS = $(addprefix $(BUILDDIR)/,$(SEQ_TEST_SRCS:.c=.o))
 DLL_TEST_OBJS = $(addprefix $(BUILDDIR)/,$(DLL_TEST_SRCS:.c=.o))
 LL_TEST_OBJS  = $(addprefix $(BUILDDIR)/,$(LL_TEST_SRCS:.c=.o))
+QUEUE_TEST_OBJS = $(addprefix $(BUILDDIR)/,$(QUEUE_TEST_SRCS:.c=.o))
 MAIN_OBJS     = $(addprefix $(BUILDDIR)/,$(MAIN_SRCS:.c=.o))
 
 
-.PHONY: all test dll-test linked-test main clean mkdir
+.PHONY: all test dll-test linked-test queue-test main clean mkdir
 
-all: mkdir $(SEQ_TEST_TARGET) $(DLL_TEST_TARGET) $(LL_TEST_TARGET)
+all: mkdir $(SEQ_TEST_TARGET) $(DLL_TEST_TARGET) $(LL_TEST_TARGET) $(QUEUE_TEST_TARGET)
 
 # 主程序需要的头文件目前存在同名符号冲突（node/is_empty），因此改为显式构建。
 main: $(MAIN_TARGET)
@@ -54,6 +58,10 @@ linked-test: $(LL_TEST_TARGET)
 	@echo "Running linked list tests..."
 	@$(LL_TEST_TARGET)
 
+queue-test: $(QUEUE_TEST_TARGET)
+	@echo "Running queue tests..."
+	@$(QUEUE_TEST_TARGET)
+
 # 编译测试程序
 $(SEQ_TEST_TARGET): $(SEQ_TEST_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^
@@ -66,6 +74,10 @@ $(DLL_TEST_TARGET): $(DLL_TEST_OBJS)
 $(LL_TEST_TARGET): $(LL_TEST_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^
 	@echo "Built linked list test program: $@"
+
+$(QUEUE_TEST_TARGET): $(QUEUE_TEST_OBJS)
+	$(CC) $(CFLAGS) -o $@ $^
+	@echo "Built queue test program: $@"
 
 # 编译主程序
 $(MAIN_TARGET): $(MAIN_OBJS)
