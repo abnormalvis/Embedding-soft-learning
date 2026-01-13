@@ -6,11 +6,14 @@
 #include <unistd.h>
 #include <stdbool.h>
 
-//在此处定义具体结构体
+typedef struct dStruct{
+    struct dStruct * next;
+    struct dStruct * prev;
+} core_linked_list;
 
+core_linked_list * create_core_linked_list(void);
+void free_ccore_linked_list(core_linked_list * cll);
 
-
-//在下面声明具体实现方法
 
 
 #endif 
