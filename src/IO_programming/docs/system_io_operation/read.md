@@ -46,3 +46,64 @@ do {
 
 实现简化版 `cat`：从 stdin（fd=0）循环 `read`，写到 stdout（fd=1）。要求正确处理 `EINTR`。
 
+### 参考实现
+
+```c
+#include <unistd.h>
+#include <errno.h>
+#include <stdio.h>
+#include <string.h>
+
+int main(void) {
+    char buf[4096];
+    
+    for (;;) {
+        ssize_t n;
+        
+        // 循环处理 EINTR
+        do {
+            n = read(STDIN_FILENO, buf, sizeof(buf));
+        } while (n == -1 && errno == EINTR);
+        
+        // 处理各种返回情况
+        if (n > 0) {
+            // 成功读取，写到 stdout
+            ssize_t written = 0;
+            while (written < n) {
+                ssize_t w = write(STDOUT_FILENO, buf + written, n - written);
+                if (w == -1) {
+                    if (errno == EINTR) continue;
+                    perror("write");
+                    return 1;
+                }
+                written += w;
+            }
+        } else if (n == 0) {
+            // EOF，正常退出
+            return 0;
+        } else {
+            // 错误
+            perror("read");
+            return 1;
+        }
+    }
+    
+    return 0;
+}
+```
+
+编译运行：
+```bash
+gcc -o simple_cat simple_cat.c
+# 从 stdin 读取并打印到 stdout
+echo "Hello, World!" | ./simple_cat
+# 或直接读取文件
+./simple_cat < /etc/passwd
+```
+
+**关键点说明：**
+
+- 循环处理 `EINTR` 确保被信号中断时自动重试
+- 处理 `n == 0` 表示 EOF，此时应正常退出
+- 写入时也应处理短写（虽然在 stdout 上少见，但为了健壮性应该这样写）
+

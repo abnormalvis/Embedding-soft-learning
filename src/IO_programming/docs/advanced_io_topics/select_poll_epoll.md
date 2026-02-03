@@ -44,3 +44,241 @@ int epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeout)
 
 1. 用 `poll` 监听 stdin 和一个 pipe：同时支持输入与来自子进程的数据。
 2. 用 `epoll` 写一个最小 echo server（可后续扩展 socket 章节）。
+### 参考实现
+
+**练习 1: 用 poll 监听 stdin 和 pipe**
+
+```c
+#include <unistd.h>
+#include <poll.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/wait.h>
+
+int main(void) {
+    int pipefd[2];
+    if (pipe(pipefd) == -1) {
+        perror("pipe");
+        return 1;
+    }
+
+    pid_t pid = fork();
+    if (pid == -1) {
+        perror("fork");
+        return 1;
+    }
+
+    if (pid == 0) {
+        // 子进程：定期写入 pipe
+        close(pipefd[0]);  // 关闭读端
+        
+        for (int i = 0; i < 5; i++) {
+            sleep(1);
+            char msg[32];
+            snprintf(msg, sizeof(msg), "Message %d from child\n", i);
+            write(pipefd[1], msg, strlen(msg));
+        }
+        
+        close(pipefd[1]);
+        return 0;
+    }
+
+    // 父进程：用 poll 同时监听 stdin 和 pipe
+    close(pipefd[1]);  // 关闭写端
+
+    struct pollfd fds[2];
+    fds[0].fd = STDIN_FILENO;
+    fds[0].events = POLLIN;
+    
+    fds[1].fd = pipefd[0];
+    fds[1].events = POLLIN;
+
+    printf("Monitoring stdin and pipe from child (type 'quit' to exit):\n");
+
+    char buf[256];
+    int child_done = 0;
+
+    while (!child_done) {
+        int ret = poll(fds, 2, 1000);  // 1 秒超时
+
+        if (ret < 0) {
+            perror("poll");
+            break;
+        }
+
+        // 检查 stdin
+        if (fds[0].revents & POLLIN) {
+            ssize_t n = read(STDIN_FILENO, buf, sizeof(buf) - 1);
+            if (n > 0) {
+                buf[n] = '\0';
+                if (strcmp(buf, "quit\n") == 0) {
+                    printf("User quit\n");
+                    break;
+                }
+                printf("User input: %s", buf);
+            }
+        }
+
+        // 检查 pipe
+        if (fds[1].revents & POLLIN) {
+            ssize_t n = read(pipefd[0], buf, sizeof(buf) - 1);
+            if (n > 0) {
+                buf[n] = '\0';
+                printf("From child: %s", buf);
+            } else if (n == 0) {
+                printf("Child closed pipe\n");
+                child_done = 1;
+            }
+        }
+
+        // 检查错误
+        if (fds[1].revents & POLLHUP) {
+            printf("Pipe closed\n");
+            child_done = 1;
+        }
+    }
+
+    close(pipefd[0]);
+    wait(NULL);
+
+    return 0;
+}
+```
+
+编译运行：
+```bash
+gcc -o poll_demo poll_demo.c
+./poll_demo
+# 输入文本或等待子进程的消息
+```
+
+**练习 2: 用 epoll 写简单 echo server**
+
+```c
+#include <unistd.h>
+#include <sys/epoll.h>
+#include <stdio.h>
+#include <string.h>
+#include <fcntl.h>
+#include <errno.h>
+
+#define MAX_EVENTS 64
+#define BUFFER_SIZE 256
+
+void set_nonblocking(int fd) {
+    int flags = fcntl(fd, F_GETFL);
+    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+}
+
+int main(void) {
+    // 为了演示，使用 stdin/stdout（在实际应用中应使用 socket）
+    // 这里创建一个简单的模拟：监听 stdin 和 pipe
+    
+    int pipefd[2];
+    if (pipe(pipefd) == -1) {
+        perror("pipe");
+        return 1;
+    }
+
+    set_nonblocking(STDIN_FILENO);
+    set_nonblocking(pipefd[0]);
+
+    // 创建 epoll 实例
+    int epfd = epoll_create1(0);
+    if (epfd == -1) {
+        perror("epoll_create1");
+        return 1;
+    }
+
+    // 添加 stdin 到 epoll
+    struct epoll_event ev, events[MAX_EVENTS];
+    ev.events = EPOLLIN;
+    ev.data.fd = STDIN_FILENO;
+    if (epoll_ctl(epfd, EPOLL_CTL_ADD, STDIN_FILENO, &ev) == -1) {
+        perror("epoll_ctl stdin");
+        return 1;
+    }
+
+    // 添加 pipe 读端到 epoll
+    ev.data.fd = pipefd[0];
+    if (epoll_ctl(epfd, EPOLL_CTL_ADD, pipefd[0], &ev) == -1) {
+        perror("epoll_ctl pipe");
+        return 1;
+    }
+
+    printf("Simple epoll echo server (type 'quit' to exit):\n");
+
+    char buf[BUFFER_SIZE];
+    int running = 1;
+
+    while (running) {
+        int nfds = epoll_wait(epfd, events, MAX_EVENTS, 1000);
+        
+        if (nfds < 0) {
+            if (errno == EINTR) continue;
+            perror("epoll_wait");
+            break;
+        }
+
+        for (int i = 0; i < nfds; i++) {
+            if (events[i].data.fd == STDIN_FILENO) {
+                // stdin 数据到达
+                ssize_t n = read(STDIN_FILENO, buf, sizeof(buf) - 1);
+                if (n > 0) {
+                    buf[n] = '\0';
+                    if (strcmp(buf, "quit\n") == 0) {
+                        printf("Exiting...\n");
+                        running = 0;
+                        break;
+                    }
+                    // echo：写回到 stdout
+                    printf("Echo: %s", buf);
+                } else if (n == 0) {
+                    printf("stdin EOF\n");
+                    running = 0;
+                    break;
+                }
+            } else if (events[i].data.fd == pipefd[0]) {
+                // pipe 数据到达
+                ssize_t n = read(pipefd[0], buf, sizeof(buf) - 1);
+                if (n > 0) {
+                    buf[n] = '\0';
+                    printf("Pipe data: %s", buf);
+                } else if (n == 0) {
+                    printf("Pipe closed\n");
+                }
+            }
+        }
+    }
+
+    close(epfd);
+    close(pipefd[0]);
+    close(pipefd[1]);
+
+    return 0;
+}
+```
+
+编译运行：
+```bash
+gcc -o epoll_demo epoll_demo.c
+./epoll_demo
+```
+
+**关键点：**
+
+**poll 方案：**
+- 每次 `poll()` 需要传递所有 FD
+- O(n) 扫描所有 FD 检查事件
+- 适合 FD 数量较少的场景
+
+**epoll 方案：**
+- 使用 EPOLL_CTL_ADD 预先注册 FD
+- O(1) 或 O(log n) 查询就绪事件
+- 适合大量并发连接的场景
+- Linux 专有，不可移植
+
+**实际应用建议：**
+- 对于文件/管道：`poll` 足够
+- 对于网络编程（socket）：优先使用 `epoll`
+- 要编写可移植代码：考虑 `select` 或 `poll`

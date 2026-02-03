@@ -61,3 +61,158 @@ if (fd == -1) {
 1. 实现一个小程序：接受 `path flags mode`，打印打开成功的 FD 或失败原因。
 2. 对比 `O_APPEND` 与普通写：多进程并发写入同一文件，观察输出差异。
 
+### 参考实现
+
+**练习 1: 打开文件程序**
+
+```c
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <unistd.h>
+
+int parse_flags(const char *flagstr) {
+    int flags = 0;
+    
+    if (strchr(flagstr, 'r')) flags |= O_RDONLY;
+    if (strchr(flagstr, 'w')) flags |= O_WRONLY;
+    if (strchr(flagstr, '+')) flags = (flags & ~(O_RDONLY | O_WRONLY)) | O_RDWR;
+    if (strchr(flagstr, 'c')) flags |= O_CREAT;
+    if (strchr(flagstr, 't')) flags |= O_TRUNC;
+    if (strchr(flagstr, 'a')) flags |= O_APPEND;
+    if (strchr(flagstr, 'e')) flags |= O_EXCL;
+    
+    return flags;
+}
+
+int main(int argc, char **argv) {
+    if (argc < 2) {
+        fprintf(stderr, "Usage: %s <path> [flags] [mode]\n", argv[0]);
+        fprintf(stderr, "  flags: r(read) w(write) +(rdwr) c(creat) t(trunc) a(append) e(excl)\n");
+        fprintf(stderr, "  mode: octal (default 0644)\n");
+        return 1;
+    }
+
+    const char *path = argv[1];
+    const char *flagstr = argc > 2 ? argv[2] : "r";
+    mode_t mode = argc > 3 ? (mode_t)strtol(argv[3], NULL, 8) : 0644;
+
+    int flags = parse_flags(flagstr);
+    
+    printf("Opening: %s\n", path);
+    printf("  flags: 0x%x\n", flags);
+    printf("  mode: %o\n", mode);
+
+    int fd;
+    if (flags & O_CREAT) {
+        fd = open(path, flags, mode);
+    } else {
+        fd = open(path, flags);
+    }
+
+    if (fd == -1) {
+        printf("Failed: %s (errno=%d)\n", strerror(errno), errno);
+        return 1;
+    }
+
+    printf("Success! FD: %d\n", fd);
+    close(fd);
+    return 0;
+}
+```
+
+编译运行：
+```bash
+gcc -o open_demo open_demo.c
+./open_demo /tmp/test.txt r              # 只读打开
+./open_demo /tmp/test.txt w              # 只写打开（不存在会失败）
+./open_demo /tmp/test.txt "wc" 0644      # 写+创建
+./open_demo /tmp/test.txt "wce" 0644     # 写+创建+独占
+```
+
+**练习 2: O_APPEND 与普通写的对比**
+
+```c
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <sys/wait.h>
+
+int main(int argc, char **argv) {
+    if (argc < 2) {
+        fprintf(stderr, "Usage: %s <normal|append> [num_processes]\n", argv[0]);
+        return 1;
+    }
+
+    const char *mode = argv[1];
+    int num_procs = argc > 2 ? atoi(argv[2]) : 5;
+    const char *filename = "/tmp/write_test.txt";
+
+    // 清空文件
+    int fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    close(fd);
+
+    printf("Mode: %s, Processes: %d\n", mode, num_procs);
+
+    for (int i = 0; i < num_procs; i++) {
+        pid_t pid = fork();
+        if (pid == 0) {
+            // 子进程
+            int flags = O_WRONLY;
+            if (strcmp(mode, "append") == 0) {
+                flags |= O_APPEND;
+            }
+            
+            int fd = open(filename, flags);
+            if (fd == -1) {
+                perror("open");
+                return 1;
+            }
+
+            // 写入标识
+            char buf[32];
+            snprintf(buf, sizeof(buf), "Process %d\n", i);
+            
+            for (int j = 0; j < 10; j++) {
+                write(fd, buf, strlen(buf));
+                usleep(10000);  // 模拟其他处理
+            }
+
+            close(fd);
+            return 0;
+        }
+    }
+
+    // 等待所有子进程
+    for (int i = 0; i < num_procs; i++) {
+        wait(NULL);
+    }
+
+    // 显示结果
+    printf("\nFile contents:\n");
+    system("cat " "/tmp/write_test.txt" " | head -20");
+    printf("\n(总行数: ");
+    system("wc -l " "/tmp/write_test.txt");
+    
+    return 0;
+}
+```
+
+编译运行：
+```bash
+gcc -o append_demo append_demo.c
+./append_demo normal 3      # 普通写入，观察混乱
+./append_demo append 3      # O_APPEND 写入，更有序
+```
+
+**关键观察：**
+
+- **普通写入**：多个进程会在文件中间竞争写位置，可能导致数据混乱和丢失
+- **O_APPEND**：每次写入都原子地追加到文件末尾，虽然顺序不确定但不会丢数据
+

@@ -90,3 +90,154 @@ if (fcntl(fd, F_SETLK, &lk) == -1) {
 
 1. 写一个程序：打开同一个文件，尝试 `F_SETLK` 加写锁；并发运行两次，观察第二个进程的错误码。
 2. 把 stdin 设为非阻塞，用循环读取并在 `EAGAIN` 时 `poll` 等待。
+### 参考实现
+
+**练习 1: 文件锁演示**
+
+```c
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+
+int main(void) {
+    // 打开文件
+    int fd = open("/tmp/lockfile.txt", O_RDWR | O_CREAT, 0644);
+    if (fd == -1) {
+        perror("open");
+        return 1;
+    }
+
+    printf("PID %d: attempting to lock\n", getpid());
+
+    // 设置写锁
+    struct flock lock;
+    lock.l_type   = F_WRLCK;    // 写锁
+    lock.l_whence = SEEK_SET;
+    lock.l_start  = 0;
+    lock.l_len    = 0;          // 锁整个文件
+
+    // 非阻塞尝试加锁
+    if (fcntl(fd, F_SETLK, &lock) == -1) {
+        printf("PID %d: lock failed - %s (errno=%d)\n",
+               getpid(), strerror(errno), errno);
+        close(fd);
+        return 1;
+    }
+
+    printf("PID %d: lock acquired!\n", getpid());
+
+    // 持有锁 10 秒
+    sleep(10);
+
+    // 释放锁
+    lock.l_type = F_UNLCK;
+    fcntl(fd, F_SETLK, &lock);
+
+    printf("PID %d: lock released\n", getpid());
+    close(fd);
+
+    return 0;
+}
+```
+
+编译运行：
+```bash
+gcc -o file_lock file_lock.c
+./file_lock &
+sleep 1
+./file_lock       # 第二个进程应该获取不到锁
+wait
+```
+
+**预期输出：**
+```
+PID 12345: attempting to lock
+PID 12345: lock acquired!
+PID 12346: attempting to lock
+PID 12346: lock failed - Resource temporarily unavailable (errno=11)
+PID 12345: lock released
+```
+
+**练习 2: 非阻塞 stdin + poll**
+
+```c
+#include <fcntl.h>
+#include <unistd.h>
+#include <poll.h>
+#include <stdio.h>
+#include <errno.h>
+#include <string.h>
+
+int main(void) {
+    // 读取原有标志
+    int flags = fcntl(STDIN_FILENO, F_GETFL);
+    if (flags == -1) {
+        perror("fcntl(F_GETFL)");
+        return 1;
+    }
+
+    // 设置 O_NONBLOCK
+    if (fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK) == -1) {
+        perror("fcntl(F_SETFL)");
+        return 1;
+    }
+
+    printf("stdin is now non-blocking. Type something (or wait 5 seconds):\n");
+
+    char buf[256];
+    struct pollfd pfd;
+    pfd.fd = STDIN_FILENO;
+    pfd.events = POLLIN;
+
+    int attempts = 0;
+    while (attempts < 5) {
+        printf("Attempt %d: polling stdin (timeout=1000ms)...\n", attempts + 1);
+        
+        int ret = poll(&pfd, 1, 1000);  // 1 秒超时
+        
+        if (ret > 0) {
+            // 有数据可读
+            ssize_t n = read(STDIN_FILENO, buf, sizeof(buf) - 1);
+            if (n > 0) {
+                buf[n] = '\0';
+                printf("Read %ld bytes: %s", n, buf);
+                break;
+            }
+        } else if (ret == 0) {
+            // 超时
+            printf("  timeout, no data available\n");
+        } else {
+            // 错误
+            perror("poll");
+            return 1;
+        }
+        
+        attempts++;
+    }
+
+    if (attempts == 5) {
+        printf("No input received after 5 seconds.\n");
+    }
+
+    // 恢复阻塞模式（可选）
+    fcntl(STDIN_FILENO, F_SETFL, flags);
+
+    return 0;
+}
+```
+
+编译运行：
+```bash
+gcc -o nonblock_poll nonblock_poll.c
+./nonblock_poll
+# 让它等待，或者输入内容
+```
+
+**关键点：**
+- `F_GETFL` / `F_SETFL` 可以动态修改 FD 的状态标志
+- `O_NONBLOCK` 设置后，`read()` 无数据时立刻返回 `EAGAIN`
+- 配合 `poll()` 可以实现高效的 IO 复用
+- 文件锁在多进程竞争同一资源时很有用

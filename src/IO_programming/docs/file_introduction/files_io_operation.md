@@ -55,3 +55,166 @@
 4. 写 `stat-demo`：打印文件类型与权限
 5. 再进入 stdio 与目录相关 API
 
+### 参考实现
+
+**练习 1: cp - 文件拷贝**
+
+```c
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <errno.h>
+#include <string.h>
+
+#define BUF_SIZE 4096
+
+int main(int argc, char **argv) {
+    if (argc != 3) {
+        fprintf(stderr, "Usage: %s <src> <dst>\n", argv[0]);
+        return 1;
+    }
+
+    int src_fd = open(argv[1], O_RDONLY);
+    if (src_fd == -1) {
+        perror("open src");
+        return 1;
+    }
+
+    int dst_fd = open(argv[2], O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (dst_fd == -1) {
+        perror("open dst");
+        close(src_fd);
+        return 1;
+    }
+
+    char buf[BUF_SIZE];
+    ssize_t n;
+    
+    while ((n = read(src_fd, buf, BUF_SIZE)) > 0) {
+        if (write(dst_fd, buf, n) != n) {
+            perror("write");
+            close(src_fd);
+            close(dst_fd);
+            return 1;
+        }
+    }
+
+    if (n < 0) {
+        perror("read");
+        close(src_fd);
+        close(dst_fd);
+        return 1;
+    }
+
+    close(src_fd);
+    close(dst_fd);
+    printf("Copied: %s -> %s\n", argv[1], argv[2]);
+    
+    return 0;
+}
+```
+
+**练习 2: cat - 标准输入/输出**
+
+```c
+#include <unistd.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
+
+#define BUF_SIZE 4096
+
+int cat_fd(int fd) {
+    char buf[BUF_SIZE];
+    ssize_t n;
+    
+    while ((n = read(fd, buf, BUF_SIZE)) > 0) {
+        write(STDOUT_FILENO, buf, n);
+    }
+    
+    return (n < 0) ? 1 : 0;
+}
+
+int main(int argc, char **argv) {
+    if (argc == 1) {
+        // 无参数：从 stdin 读取
+        return cat_fd(STDIN_FILENO);
+    }
+
+    // 有参数：打开文件列表
+    for (int i = 1; i < argc; i++) {
+        int fd = open(argv[i], O_RDONLY);
+        if (fd == -1) {
+            perror(argv[i]);
+            continue;
+        }
+        cat_fd(fd);
+        close(fd);
+    }
+    
+    return 0;
+}
+```
+
+**练习 3: seek-demo - 文件洞演示**
+
+```c
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/stat.h>
+
+int main(void) {
+    const char *filename = "/tmp/sparse_file.bin";
+    
+    int fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd == -1) {
+        perror("open");
+        return 1;
+    }
+
+    // 写入 "START"
+    write(fd, "START", 5);
+    
+    // 跳到 1MB 处
+    lseek(fd, 1024 * 1024, SEEK_SET);
+    
+    // 写入 "END"
+    write(fd, "END", 3);
+    
+    close(fd);
+
+    // 查看文件大小
+    struct stat st;
+    stat(filename, &st);
+    
+    printf("Logical size: %ld bytes\n", st.st_size);
+    
+    // 使用 du 查看实际占用
+    printf("Actual usage:\n");
+    char cmd[256];
+    snprintf(cmd, sizeof(cmd), "du -h %s && ls -lh %s", filename, filename);
+    system(cmd);
+    
+    return 0;
+}
+```
+
+编译运行这些练习：
+```bash
+gcc -o simple_cp simple_cp.c
+gcc -o simple_cat simple_cat.c
+gcc -o seek_demo seek_demo.c
+
+# 测试 cp
+./simple_cp /etc/passwd /tmp/passwd_copy
+
+# 测试 cat
+./simple_cat /etc/passwd | head -5
+echo "test" | ./simple_cat
+
+# 测试 seek
+./seek_demo
+```
+

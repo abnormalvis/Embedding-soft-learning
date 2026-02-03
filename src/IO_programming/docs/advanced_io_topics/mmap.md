@@ -37,3 +37,104 @@ int munmap(void *addr, size_t length);
 ## 5. 练习
 
 实现 `mmap-cat`：用 `mmap` 读取文件内容并写到 stdout（注意仍要用 `write` 输出）。
+### 参考实现
+
+```c
+#include <sys/mman.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <string.h>
+#include <errno.h>
+
+int main(int argc, char **argv) {
+    if (argc != 2) {
+        fprintf(stderr, "Usage: %s <file>\n", argv[0]);
+        return 1;
+    }
+
+    const char *filename = argv[1];
+
+    // 打开文件用于读取
+    int fd = open(filename, O_RDONLY);
+    if (fd == -1) {
+        perror("open");
+        return 1;
+    }
+
+    // 获取文件大小
+    struct stat st;
+    if (fstat(fd, &st) == -1) {
+        perror("fstat");
+        close(fd);
+        return 1;
+    }
+
+    off_t filesize = st.st_size;
+    printf("File size: %ld bytes\n", filesize);
+
+    if (filesize == 0) {
+        close(fd);
+        return 0;
+    }
+
+    // 内存映射
+    void *addr = mmap(NULL, filesize, PROT_READ, MAP_PRIVATE, fd, 0);
+    if (addr == MAP_FAILED) {
+        perror("mmap");
+        close(fd);
+        return 1;
+    }
+
+    printf("mmap succeeded, address: %p\n", addr);
+
+    // 通过 write 输出内容
+    ssize_t written = 0;
+    while (written < filesize) {
+        ssize_t n = write(STDOUT_FILENO,
+                          (char *)addr + written,
+                          filesize - written);
+        if (n == -1) {
+            if (errno == EINTR) continue;
+            perror("write");
+            munmap(addr, filesize);
+            close(fd);
+            return 1;
+        }
+        written += n;
+    }
+
+    // 解除映射
+    if (munmap(addr, filesize) == -1) {
+        perror("munmap");
+        close(fd);
+        return 1;
+    }
+
+    close(fd);
+    printf("\nmmap-cat completed\n");
+
+    return 0;
+}
+```
+
+编译运行：
+```bash
+gcc -o mmap_cat mmap_cat.c
+./mmap_cat /etc/passwd
+./mmap_cat /tmp/large_file > /tmp/output.txt
+```
+
+**关键点：**
+- `mmap()` 将文件映射到内存，但映射区域仍通过 `write()` 输出
+- 处理短写：`write()` 可能不会一次写完所有数据
+- 处理 `EINTR`：被信号中断时重试
+- `MAP_PRIVATE` 表示对映射区的修改不会写回文件（写时复制）
+- `MAP_SHARED` 则修改会写回文件
+
+**性能考虑：**
+- 对于小文件，普通 IO 可能更简单
+- 对于大文件，mmap 可以避免一次显式拷贝
+- 但缺页异常可能导致隐式 IO，需要实际测试

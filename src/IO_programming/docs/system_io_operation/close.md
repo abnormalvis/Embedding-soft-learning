@@ -37,3 +37,63 @@ int close(int fd);
 
 写程序：`open()` 一个文件，`close()` 两次，观察第二次的 `errno`。
 
+### 参考实现
+
+```c
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <errno.h>
+#include <string.h>
+
+int main(void) {
+    // 打开一个文件（/etc/passwd 通常存在）
+    int fd = open("/etc/passwd", O_RDONLY);
+    if (fd == -1) {
+        perror("open");
+        return 1;
+    }
+
+    printf("File opened successfully, FD: %d\n", fd);
+
+    // 第一次关闭，应该成功
+    if (close(fd) == -1) {
+        perror("First close");
+        return 1;
+    }
+    printf("First close: SUCCESS\n");
+
+    // 第二次关闭同一个 FD，应该失败
+    errno = 0;  // 清除之前的 errno
+    if (close(fd) == -1) {
+        printf("Second close: FAILED (expected)\n");
+        printf("  errno: %d\n", errno);
+        printf("  Error: %s\n", strerror(errno));
+    } else {
+        printf("Second close: SUCCESS (unexpected!)\n");
+    }
+
+    return 0;
+}
+```
+
+编译运行：
+```bash
+gcc -o close_demo close_demo.c
+./close_demo
+```
+
+**预期输出：**
+```
+File opened successfully, FD: 3
+First close: SUCCESS
+Second close: FAILED (expected)
+  errno: 9
+  Error: Bad file descriptor
+```
+
+**说明：**
+- 第一次 `close()` 成功，FD 被释放
+- 第二次 `close()` 失败，因为 FD 已经无效
+- `errno` 为 `EBADF`（9），表示"Bad file descriptor"
+

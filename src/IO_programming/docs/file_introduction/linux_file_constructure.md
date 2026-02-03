@@ -71,3 +71,159 @@ $$\text{final\_mode} = \text{mode} \;\&\; \sim\text{umask}$$
 1. 写一个程序：`open()` 一个文件两次，分别 `read()` 10 字节，比较两次读到的内容与偏移量变化。
 2. `fork()` 后父子进程共享 FD：各自 `write()` 多次，观察输出交错；再对比 `O_APPEND` 的行为。
 
+### 参考实现
+
+**练习 1: 验证偏移量独立性**
+
+```c
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdio.h>
+
+int main(void) {
+    printf("=== Open same file twice, separate offsets ===\n");
+    
+    // 第一次打开
+    int fd1 = open("/etc/passwd", O_RDONLY);
+    if (fd1 == -1) {
+        perror("open fd1");
+        return 1;
+    }
+    
+    // 第二次打开（同一个文件）
+    int fd2 = open("/etc/passwd", O_RDONLY);
+    if (fd2 == -1) {
+        perror("open fd2");
+        return 1;
+    }
+
+    char buf1[11] = {0};
+    char buf2[11] = {0};
+
+    // 通过 fd1 读取 10 字节
+    read(fd1, buf1, 10);
+    printf("fd1 read (0-9):   %s\n", buf1);
+
+    // 通过 fd2 读取 10 字节
+    read(fd2, buf2, 10);
+    printf("fd2 read (0-9):   %s\n", buf2);
+
+    // 再通过 fd1 读取 10 字节
+    read(fd1, buf1, 10);
+    printf("fd1 read (10-19): %s\n", buf1);
+
+    printf("\nConclusion: Each FD has independent offset\n");
+
+    close(fd1);
+    close(fd2);
+
+    return 0;
+}
+```
+
+**练习 2: fork 后的 FD 偏移共享与 O_APPEND 对比**
+
+```c
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/wait.h>
+
+int main(int argc, char **argv) {
+    if (argc < 2) {
+        fprintf(stderr, "Usage: %s <normal|append>\n", argv[0]);
+        return 1;
+    }
+
+    const char *mode = argv[1];
+    const char *filename = "/tmp/fork_write_test.txt";
+
+    // 清空文件
+    int init_fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    close(init_fd);
+
+    int flags = O_WRONLY;
+    if (strcmp(mode, "append") == 0) {
+        flags |= O_APPEND;
+    }
+
+    int fd = open(filename, flags);
+    if (fd == -1) {
+        perror("open");
+        return 1;
+    }
+
+    pid_t pid = fork();
+    if (pid == -1) {
+        perror("fork");
+        return 1;
+    }
+
+    if (pid == 0) {
+        // 子进程：写入 10 次
+        for (int i = 0; i < 10; i++) {
+            char buf[32];
+            snprintf(buf, sizeof(buf), "Child-%d\n", i);
+            write(fd, buf, strlen(buf));
+            usleep(50000);  // 50ms 延迟，让父进程也有机会写
+        }
+    } else {
+        // 父进程：写入 10 次
+        for (int i = 0; i < 10; i++) {
+            char buf[32];
+            snprintf(buf, sizeof(buf), "Parent-%d\n", i);
+            write(fd, buf, strlen(buf));
+            usleep(40000);  // 40ms 延迟
+        }
+        
+        wait(NULL);  // 等待子进程
+    }
+
+    close(fd);
+
+    printf("Mode: %s\n", mode);
+    printf("File contents:\n");
+    system("cat " "/tmp/fork_write_test.txt");
+
+    return 0;
+}
+```
+
+编译运行：
+```bash
+gcc -o fd_offset fd_offset.c
+./fd_offset
+
+gcc -o fork_write fork_write.c
+./fork_write normal   # 观察输出混乱
+./fork_write append   # 观察输出虽混乱但不丢数据
+```
+
+**关键观察：**
+
+**练习 1：**
+- 两次 `open()` 的同一个文件会得到两个不同的 FD
+- 这两个 FD 有**独立的**偏移量
+- 修改 fd1 的偏移不会影响 fd2
+
+**练习 2：**
+- **普通写入（normal）：** 父子进程共享偏移，导致数据可能丢失或混乱
+- **追加写入（O_APPEND）：** 每次 `write()` 都原子地追加到末尾，虽然顺序不定但不会丢数据
+
+**示意图：**
+
+普通写入的问题：
+```
+Parent: lseek -> offset=0, write 7 bytes -> offset=7
+Child:  lseek -> offset=7, write 7 bytes -> offset=14
+结果：可能互相覆盖
+```
+
+O_APPEND 的优势：
+```
+Parent: write with APPEND -> 原子地追加到当前末尾
+Child:  write with APPEND -> 原子地追加到当前末尾
+结果：两个数据都保存，虽然顺序不定
+```
+
