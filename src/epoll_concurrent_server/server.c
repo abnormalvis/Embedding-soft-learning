@@ -53,6 +53,7 @@ int main()
 	}
 
 	printf("sfd: %d\n", listen_fd);
+	fflush(stdout);
 
 	/*设置句柄为非阻塞方式*/
 //	setnonblocking(listen_fd);
@@ -69,9 +70,11 @@ int main()
 	}
 
 	printf("bind success.\n");
+	fflush(stdout);
 
 	listen(listen_fd, MAXNUM);
 	printf("begin listen....\n");
+	fflush(stdout);
 
 	/* 创建 epoll 句柄，把监听 socket 加入到 epoll 集合里 */
 	kdpfd = epoll_create(MAXEPOLLSIZE);
@@ -89,6 +92,7 @@ int main()
 	{
 
 		printf("监听 socket 加入 epoll 成功！\n");
+	fflush(stdout);
 	}
 
 	curfds = 1;
@@ -116,9 +120,11 @@ int main()
 				}
 
 				printf("client fd:%d\n", client_fd);
+				fflush(stdout);
 
 				printf("ip: %s\n", inet_ntoa(caddr.sin_addr));
 				printf("port: %d\n", ntohs(caddr.sin_port));
+				fflush(stdout);
 
 				//setnonblocking(client_fd);
 				ev.events = EPOLLIN | EPOLLET;
@@ -131,6 +137,7 @@ int main()
 				}
 				curfds++;
 				printf("curfds:%d\n", curfds);
+				fflush(stdout);
 			}
 			else
 			{
@@ -149,7 +156,10 @@ int main()
 					printf("curfds:%d\n", curfds);
 				}
 				else
+				{
 					printf("cmd: %s\n", cmd);
+					fflush(stdout);
+				}
 			}
 		}
 	}

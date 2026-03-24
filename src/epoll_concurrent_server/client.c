@@ -34,7 +34,7 @@ int main()
 
 	saddr.sin_family = AF_INET; 
 	saddr.sin_port = htons(8990);
-	saddr.sin_addr.s_addr = inet_addr("192.168.1.155"); 
+	saddr.sin_addr.s_addr = inet_addr("127.0.0.1"); 
 	slen = sizeof(saddr);
 
 	if(connect(connect_fd, (struct sockaddr *)&saddr, slen) < 0)
