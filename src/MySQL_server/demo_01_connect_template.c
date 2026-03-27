@@ -16,11 +16,16 @@ int main(void) {
 		return 1;
 	}
 
-	/* TODO:
-	 * 把下面参数改成你本机 MySQL 配置
-	 * host, user, password, db, port
+	/*
+	 * Socket 方式连接本机 MySQL（auth_socket 认证）
+	 * host: localhost (或 NULL)
+	 * user: root
+	 * password: NULL (socket 不需要密码)
+	 * db: student_info
+	 * port: 0 (socket 方式时不使用 TCP 端口)
+	 * unix_socket: /var/run/mysqld/mysqld.sock
 	 */
-	if (mysql_real_connect(conn, "127.0.0.1", "root", "123456", "student_info", 3306, NULL, 0) == NULL) {
+	if (mysql_real_connect(conn, "localhost", "root", NULL, "student_info", 0, "/var/run/mysqld/mysqld.sock", 0) == NULL) {
 		fprintf(stderr, "connect failed: %s\n", mysql_error(conn));
 		mysql_close(conn);
 		return 1;
