@@ -1,1 +1,10 @@
 .idea/
+.claude/
+.obsidian/
+study/
+docs/workboddy_skills.md
+
+src/http_server/files/
+src/epoll_concurrent_server/client
+src/epoll_concurrent_server/server.log
+src/http_server/http_server
