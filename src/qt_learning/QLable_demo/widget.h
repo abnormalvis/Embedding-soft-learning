@@ -4,6 +4,11 @@
 #include <QWidget>
 #include <qlabel.h>
 #include <QPushButton>
+#include <QStackedLayout>
+#include <QTreeWidget>
+#include <QLineEdit>
+#include <QVBoxLayout>
+
 QT_BEGIN_NAMESPACE
 namespace Ui {
 class Widget;
@@ -24,10 +29,14 @@ signals:
 private slots:
     void onLabelPointerReceived(QLabel* labelptr);
 private:
-    Ui::Widget *ui;
     QLabel *m_label;
     QPushButton *m_button;
-    // std::unique_ptr<QLabel> m_label;
-    // std::unique_ptr<QPushButton> m_button;
+    // ROS2 参数可视化与编辑相关
+    QStackedLayout *m_stackedLayout;
+    QWidget *m_pageList;
+    QWidget *m_pageEdit;
+    QTreeWidget *m_paramTree;
+    QLineEdit *m_valInput;
+    QPushButton *m_saveBtn;
 };
 #endif // WIDGET_H

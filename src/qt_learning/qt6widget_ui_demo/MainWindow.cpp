@@ -13,6 +13,7 @@
 #include <QSpinBox>
 #include <QTableWidget>
 #include <QTableWidgetItem>
+#include <QVector>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -36,7 +37,7 @@ MainWindow::MainWindow(QWidget *parent)
     auto *formBox = new QGroupBox("Student Form", this);
     auto *formLayout = new QFormLayout(formBox);
 
-    m_cityBox->addItems({"Beijing", "Shanghai", "Shenzhen", "Hangzhou", "Chengdu"});
+    m_cityBox->addItems({"Beijing", "Shanghai", "Shenzhen", "Hangzhou", "Chengdu", "Guangzhou"});
     m_ageSpin->setRange(1, 130);
     m_ageSpin->setValue(20);
 
@@ -61,9 +62,10 @@ MainWindow::MainWindow(QWidget *parent)
     leftPanel->addWidget(themeBox);
     leftPanel->addStretch();
 
-    m_table->setColumnCount(4);
-    m_table->setHorizontalHeaderLabels({"Name", "Phone", "City", "Age"});
+    m_table->setColumnCount(5);
+    m_table->setHorizontalHeaderLabels({"ID", "Name", "Phone", "City", "Age"});
     m_table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    m_table->setColumnHidden(0, true);
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_table->setSelectionMode(QAbstractItemView::SingleSelection);
     m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -80,6 +82,21 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_themeBox, qOverload<int>(&QComboBox::currentIndexChanged), this, &MainWindow::applyTheme);
 
     applyTheme(0);
+
+    if (!m_database.initialize()) {
+        const QString detail = m_database.lastError();
+        QMessageBox::critical(this,
+                              "Database Error",
+                              "Failed to initialize MySQL database.\n"
+                              "Detail: " + (detail.isEmpty() ? QString("Unknown error") : detail) + "\n\n"
+                              "Check env vars: DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, DB_SOCKET.");
+        return;
+    }
+
+    QString loadError;
+    if (!reloadTable(&loadError)) {
+        QMessageBox::critical(this, "Database Error", "Failed to load students: " + loadError);
+    }
 }
 
 void MainWindow::addStudent() {
@@ -91,14 +108,20 @@ void MainWindow::addStudent() {
         return;
     }
 
-    const int row = m_table->rowCount();
-    m_table->insertRow(row);
-    fillTableRow(row, name, phone, city, age);
+    QString error;
+    if (!m_database.addStudent(name, phone, city, age, &error)) {
+        QMessageBox::warning(this, "Add failed", error);
+        return;
+    }
+
+    if (!reloadTable(&error)) {
+        QMessageBox::warning(this, "Refresh failed", error);
+    }
 }
 
 void MainWindow::updateStudent() {
-    const int row = m_table->currentRow();
-    if (row < 0) {
+    const int id = selectedStudentId();
+    if (id <= 0) {
         QMessageBox::information(this, "Tip", "Please select one row first.");
         return;
     }
@@ -111,17 +134,33 @@ void MainWindow::updateStudent() {
         return;
     }
 
-    fillTableRow(row, name, phone, city, age);
+    QString error;
+    if (!m_database.updateStudent(id, name, phone, city, age, &error)) {
+        QMessageBox::warning(this, "Update failed", error);
+        return;
+    }
+
+    if (!reloadTable(&error)) {
+        QMessageBox::warning(this, "Refresh failed", error);
+    }
 }
 
 void MainWindow::removeStudent() {
-    const int row = m_table->currentRow();
-    if (row < 0) {
+    const int id = selectedStudentId();
+    if (id <= 0) {
         QMessageBox::information(this, "Tip", "Please select one row first.");
         return;
     }
 
-    m_table->removeRow(row);
+    QString error;
+    if (!m_database.deleteStudent(id, &error)) {
+        QMessageBox::warning(this, "Delete failed", error);
+        return;
+    }
+
+    if (!reloadTable(&error)) {
+        QMessageBox::warning(this, "Refresh failed", error);
+    }
 }
 
 void MainWindow::loadSelectedRow() {
@@ -130,16 +169,21 @@ void MainWindow::loadSelectedRow() {
         return;
     }
 
-    m_nameEdit->setText(m_table->item(row, 0)->text());
-    m_phoneEdit->setText(m_table->item(row, 1)->text());
+    if (m_table->item(row, 1) == nullptr || m_table->item(row, 2) == nullptr ||
+        m_table->item(row, 3) == nullptr || m_table->item(row, 4) == nullptr) {
+        return;
+    }
 
-    const QString city = m_table->item(row, 2)->text();
+    m_nameEdit->setText(m_table->item(row, 1)->text());
+    m_phoneEdit->setText(m_table->item(row, 2)->text());
+
+    const QString city = m_table->item(row, 3)->text();
     const int cityIndex = m_cityBox->findText(city);
     if (cityIndex >= 0) {
         m_cityBox->setCurrentIndex(cityIndex);
     }
 
-    m_ageSpin->setValue(m_table->item(row, 3)->text().toInt());
+    m_ageSpin->setValue(m_table->item(row, 4)->text().toInt());
 }
 
 void MainWindow::applyTheme(int index) {
@@ -182,9 +226,33 @@ bool MainWindow::readForm(QString *name, QString *phone, QString *city, int *age
     return true;
 }
 
-void MainWindow::fillTableRow(int row, const QString &name, const QString &phone, const QString &city, int age) {
-    m_table->setItem(row, 0, new QTableWidgetItem(name));
-    m_table->setItem(row, 1, new QTableWidgetItem(phone));
-    m_table->setItem(row, 2, new QTableWidgetItem(city));
-    m_table->setItem(row, 3, new QTableWidgetItem(QString::number(age)));
+void MainWindow::fillTableRow(int row, int id, const QString &name, const QString &phone, const QString &city, int age) {
+    m_table->setItem(row, 0, new QTableWidgetItem(QString::number(id)));
+    m_table->setItem(row, 1, new QTableWidgetItem(name));
+    m_table->setItem(row, 2, new QTableWidgetItem(phone));
+    m_table->setItem(row, 3, new QTableWidgetItem(city));
+    m_table->setItem(row, 4, new QTableWidgetItem(QString::number(age)));
+}
+
+bool MainWindow::reloadTable(QString *errorMessage) {
+    const QVector<Student> students = m_database.fetchAll(errorMessage);
+    if (errorMessage != nullptr && !errorMessage->isEmpty()) {
+        return false;
+    }
+
+    m_table->setRowCount(0);
+    for (const Student &student : students) {
+        const int row = m_table->rowCount();
+        m_table->insertRow(row);
+        fillTableRow(row, student.id, student.name, student.phone, student.city, student.age);
+    }
+    return true;
+}
+
+int MainWindow::selectedStudentId() const {
+    const int row = m_table->currentRow();
+    if (row < 0 || m_table->item(row, 0) == nullptr) {
+        return -1;
+    }
+    return m_table->item(row, 0)->text().toInt();
 }

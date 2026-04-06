@@ -1,34 +1,44 @@
 #include "widget.h"
-#include "ui_widget.h"
 #include "SubWindow.h"
 #include <QVBoxLayout>
+#include <QStackedLayout>
+#include <QTreeWidget>
+#include <QLineEdit>
+
 Widget::Widget(QWidget *parent)
     : QWidget(parent)
-    , ui(new Ui::Widget)
 {
-    QVBoxLayout *layout = new QVBoxLayout(this);
-    m_label = new QLabel("主窗口标签", this);
-    m_button = new QPushButton("传给子窗口", this);
-    SubWindow *sub = new SubWindow();
+    QVBoxLayout *mainLayout = new QVBoxLayout(this);
+    // --- ROS2 参数可视化与编辑 ---
+    m_stackedLayout = new QStackedLayout();
 
-    sub->show();
+    // --- 第一页：参数列表页 ---
+    m_pageList = new QWidget();
+    QVBoxLayout *listLayout = new QVBoxLayout(m_pageList);
+    m_paramTree = new QTreeWidget();
+    m_paramTree->setHeaderLabels({"参数名", "类型", "当前值"});
+    listLayout->addWidget(new QLabel("ROS 2 参数列表"));
+    listLayout->addWidget(m_paramTree);
 
-    layout->addWidget(m_label);
-    layout->addWidget(m_button);
+    // --- 第二页：参数修改页 ---
+    m_pageEdit = new QWidget();
+    QVBoxLayout *editLayout = new QVBoxLayout(m_pageEdit);
+    editLayout->addWidget(new QLabel("编辑参数值"));
+    m_valInput = new QLineEdit();
+    m_saveBtn = new QPushButton("更新到 ROS 2");
+    editLayout->addWidget(m_valInput);
+    editLayout->addWidget(m_saveBtn);
+    editLayout->addStretch();
 
-    // connect(m_button, &QPushButton::clicked, this, [=](){
-    //     emit LabelPointerSignal(m_label);
-    // });
+    // --- 把两页加入堆栈 ---
+    m_stackedLayout->addWidget(m_pageList); // Index 0
+    m_stackedLayout->addWidget(m_pageEdit); // Index 1
 
-    // connect(this, &Widget::LabelPointerSignal, this, &Widget::onLabelPointerReceived);
-    // //ui->setupUi(this);
+    // --- 将堆栈布局放入主容器 ---
+    mainLayout->addLayout(m_stackedLayout);
 
-    // 连接：点击按钮 -> 触发主窗口信号 -> 传递给子窗口槽函数
-    connect(m_button, &QPushButton::clicked, this, [=]() {
-        emit LabelPointerSignal(m_label);
-    });
-
-    connect(this, &Widget::LabelPointerSignal, sub, &SubWindow::handleExternalLabel);
+    // TODO: 参数获取与填充 m_paramTree
+    // TODO: 信号槽连接（如双击参数进入编辑页、保存后返回列表页等）
 }
 
 void Widget::onLabelPointerReceived(QLabel* labelptr)
@@ -39,7 +49,4 @@ void Widget::onLabelPointerReceived(QLabel* labelptr)
         labelptr->setStyleSheet("background-color: yellow; color: red;");
     }
 }
-Widget::~Widget()
-{
-    delete ui;
-}
+Widget::~Widget() {}
