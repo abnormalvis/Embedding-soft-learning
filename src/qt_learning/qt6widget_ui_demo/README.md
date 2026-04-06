@@ -4,7 +4,23 @@
 - Form layout with `QFormLayout`
 - Data display/edit with `QTableWidget`
 - Signal/slot interactions for add/update/delete
+sh- MySQL-backed CRUD via `QSqlDatabase` (`QMYSQL`)
 - Basic UI theme switching with runtime QSS
+
+## Runtime dependencies (Ubuntu/Debian)
+```bash
+sudo apt update
+sudo apt install -y libqt6sql6-mysql mysql-client
+```
+
+## Configure MySQL via environment variables
+```bash
+export DB_HOST=127.0.0.1
+export DB_PORT=3306
+export DB_NAME=qt_demo
+export DB_USER=root
+export DB_PASSWORD=your_password
+```
 
 ## Build
 ```bash
